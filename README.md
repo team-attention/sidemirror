@@ -4,6 +4,10 @@
 
 SideMirror automatically detects AI coding tools like Claude Code, Codex, and Gemini CLI, displaying file changes in a side panel so you can review, comment, and provide feedback in real-time.
 
+## Demo
+
+https://github.com/user-attachments/assets/ccf87aec-f933-427f-80f0-824cbddec9ea
+
 ## Features
 
 - **Auto-Detection**: Automatically activates when Claude Code, Codex, or Gemini CLI starts in terminal
