@@ -144,8 +144,8 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           margin: 0;
           padding: 0;
           display: grid;
-          grid-template-columns: 1fr 320px;
-          grid-template-areas: "main sidebar";
+          grid-template-columns: 1fr 4px 320px;
+          grid-template-areas: "main resizer sidebar";
           height: 100vh;
           overflow: hidden;
           transition: grid-template-columns 0.2s ease;
@@ -171,7 +171,32 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         }
 
         body.sidebar-collapsed {
-          grid-template-columns: 1fr 44px;
+          grid-template-columns: 1fr 0 0;
+        }
+
+        body.sidebar-collapsed .resizer {
+          display: none;
+        }
+
+        body.sidebar-collapsed .sidebar {
+          display: none;
+        }
+
+        .resizer {
+          grid-area: resizer;
+          background: var(--vscode-panel-border);
+          cursor: col-resize;
+          transition: background 0.2s;
+        }
+
+        .resizer:hover,
+        .resizer.dragging {
+          background: var(--vscode-focusBorder, #007acc);
+        }
+
+        body.resizing {
+          cursor: col-resize;
+          user-select: none;
         }
 
         .sidebar.collapsed {
@@ -628,6 +653,8 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         </div>
       </div>
 
+      <div class="resizer" id="panel-resizer"></div>
+
       <div class="main-content">
         <div class="diff-header" id="viewer-header">
           <span class="diff-header-icon">📄</span>
@@ -656,10 +683,14 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         const bodyEl = document.body;
         const sidebarEl = document.querySelector('.sidebar');
         const toggleButton = document.getElementById('toggle-sidebar');
+        const resizer = document.getElementById('panel-resizer');
+        let isResizing = false;
+        let sidebarWidth = 320;
 
         function expandSidebar() {
           bodyEl.classList.remove('sidebar-collapsed');
           sidebarEl.classList.remove('collapsed');
+          bodyEl.style.gridTemplateColumns = \`1fr 4px \${sidebarWidth}px\`;
           toggleButton.textContent = '>';
           toggleButton.setAttribute('aria-label', 'Collapse file list panel');
         }
@@ -667,6 +698,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         function collapseSidebar() {
           bodyEl.classList.add('sidebar-collapsed');
           sidebarEl.classList.add('collapsed');
+          bodyEl.style.gridTemplateColumns = '';
           toggleButton.textContent = '<';
           toggleButton.setAttribute('aria-label', 'Expand file list panel');
         }
@@ -677,6 +709,30 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           } else {
             collapseSidebar();
           }
+        });
+
+        resizer.addEventListener('mousedown', (e) => {
+          if (bodyEl.classList.contains('sidebar-collapsed')) return;
+          isResizing = true;
+          bodyEl.classList.add('resizing');
+          resizer.classList.add('dragging');
+          bodyEl.style.transition = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isResizing) return;
+          const newWidth = window.innerWidth - e.clientX;
+          const clampedWidth = Math.max(150, Math.min(600, newWidth));
+          sidebarWidth = clampedWidth;
+          bodyEl.style.gridTemplateColumns = \`1fr 4px \${clampedWidth}px\`;
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (!isResizing) return;
+          isResizing = false;
+          bodyEl.classList.remove('resizing');
+          resizer.classList.remove('dragging');
+          bodyEl.style.transition = '';
         });
 
         document.getElementById('submit-comments').addEventListener('click', () => {
