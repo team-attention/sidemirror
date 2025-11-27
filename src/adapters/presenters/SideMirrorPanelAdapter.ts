@@ -140,23 +140,63 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           margin: 0;
           padding: 0;
           display: grid;
-          grid-template-columns: 280px 1fr;
+          grid-template-columns: 1fr 320px;
+          grid-template-areas: "main sidebar";
           height: 100vh;
           overflow: hidden;
+          transition: grid-template-columns 0.2s ease;
         }
 
         .sidebar {
+          grid-area: sidebar;
           padding: 16px;
-          border-right: 1px solid var(--vscode-panel-border);
+          border-left: 1px solid var(--vscode-panel-border);
           overflow-y: auto;
           background-color: var(--vscode-sideBar-background);
+          position: relative;
+          z-index: 1;
         }
 
         .main-content {
+          grid-area: main;
           display: flex;
           flex-direction: column;
           overflow: hidden;
           background-color: var(--vscode-editor-background);
+          min-width: 0;
+        }
+
+        body.sidebar-collapsed {
+          grid-template-columns: 1fr 44px;
+        }
+
+        .sidebar.collapsed {
+          padding: 12px 8px;
+          overflow: visible;
+        }
+
+        .sidebar.collapsed .header,
+        .sidebar.collapsed .section {
+          display: none;
+        }
+
+        .sidebar-toggle {
+          width: 24px;
+          height: 24px;
+          padding: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--vscode-panel-border);
+          border-radius: 4px;
+          background: var(--vscode-button-secondaryBackground);
+          color: var(--vscode-button-secondaryForeground);
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+
+        .sidebar-toggle:hover {
+          background: var(--vscode-button-secondaryHoverBackground);
         }
 
         .header {
@@ -300,6 +340,9 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           font-size: 13px;
           font-weight: 600;
           font-family: monospace;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .diff-stats {
@@ -385,7 +428,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         }
 
         .diff-line.addition .diff-line-content {
-          color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+          color: var(--vscode-gitDecoration-addedResourceForeground);
         }
 
         .diff-line.deletion {
@@ -398,7 +441,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         }
 
         .diff-line.deletion .diff-line-content {
-          color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+          color: var(--vscode-gitDecoration-deletedResourceForeground);
         }
 
         .diff-line.context {
@@ -555,8 +598,8 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         }
       </style>
     </head>
-    <body>
-      <div class="sidebar">
+    <body class="sidebar-collapsed">
+      <div class="sidebar collapsed">
         <div class="header">
           <h2>SideMirror</h2>
           <div class="status" id="status-badge">
@@ -573,11 +616,11 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         </div>
 
         <div class="section">
-          <h3>Review Comments</h3>
+          <h3>Comments</h3>
           <div id="comments-list">
             <div class="empty-text">No comments yet</div>
           </div>
-          <button id="submit-comments" style="margin-top: 12px;">Submit Review</button>
+          <button id="submit-comments" style="margin-top: 12px;">Ask AI</button>
         </div>
       </div>
 
@@ -586,6 +629,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           <span class="diff-header-icon">📄</span>
           <span class="diff-header-title">Select a file to review</span>
           <div class="diff-stats" id="diff-stats"></div>
+          <button class="sidebar-toggle" id="toggle-sidebar" aria-label="Expand file list panel">&lt;</button>
         </div>
 
         <div class="diff-container" id="diff-viewer">
@@ -604,6 +648,32 @@ export class SideMirrorPanelAdapter implements IPanelPort {
         let selectionStartLine = null;
         let selectionEndLine = null;
         let isSelecting = false;
+
+        const bodyEl = document.body;
+        const sidebarEl = document.querySelector('.sidebar');
+        const toggleButton = document.getElementById('toggle-sidebar');
+
+        function expandSidebar() {
+          bodyEl.classList.remove('sidebar-collapsed');
+          sidebarEl.classList.remove('collapsed');
+          toggleButton.textContent = '>';
+          toggleButton.setAttribute('aria-label', 'Collapse file list panel');
+        }
+
+        function collapseSidebar() {
+          bodyEl.classList.add('sidebar-collapsed');
+          sidebarEl.classList.add('collapsed');
+          toggleButton.textContent = '<';
+          toggleButton.setAttribute('aria-label', 'Expand file list panel');
+        }
+
+        toggleButton.addEventListener('click', () => {
+          if (bodyEl.classList.contains('sidebar-collapsed')) {
+            expandSidebar();
+          } else {
+            collapseSidebar();
+          }
+        });
 
         document.getElementById('submit-comments').addEventListener('click', () => {
           vscode.postMessage({ type: 'submitComments' });
@@ -654,6 +724,13 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           };
 
           list.appendChild(item);
+
+          // Auto-focus on the new file if no file is currently displayed
+          if (!currentFile) {
+            expandSidebar();
+            item.classList.add('selected');
+            vscode.postMessage({ type: 'openFile', file: filePath });
+          }
         }
 
         function renderDiff(file, diffText) {
@@ -934,7 +1011,8 @@ export class SideMirrorPanelAdapter implements IPanelPort {
 
         function updateAIType(type) {
           const label = type === 'claude' ? 'Claude' :
-                        type === 'codex' ? 'Codex' : type;
+                        type === 'codex' ? 'Codex' :
+                        type === 'gemini' ? 'Gemini' : type;
           document.getElementById('ai-type').textContent = label;
           document.getElementById('status-badge').classList.add('active');
         }

@@ -2,11 +2,11 @@
 
 **Real-time code review interface for AI coding assistants**
 
-SideMirror automatically detects AI coding tools like Claude Code and Codex, displaying file changes in a side panel so you can review, comment, and provide feedback in real-time.
+SideMirror automatically detects AI coding tools like Claude Code, Codex, and Gemini CLI, displaying file changes in a side panel so you can review, comment, and provide feedback in real-time.
 
 ## Features
 
-- **Auto-Detection**: Automatically activates when Claude Code or Codex starts in terminal
+- **Auto-Detection**: Automatically activates when Claude Code, Codex, or Gemini CLI starts in terminal
 - **Diff Viewer**: GitHub-style unified diff display with line numbers
 - **Line Comments**: Click or drag-select lines to add review comments
 - **Direct Submission**: Send comments directly to the AI terminal
@@ -22,7 +22,7 @@ Search for "SideMirror" in the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
 ### Automatic Mode
 
 1. Open a workspace in VS Code
-2. Run Claude Code or Codex in the terminal
+2. Run Claude Code, Codex, or Gemini CLI in the terminal
 3. SideMirror panel opens automatically
 4. Review file changes as the AI works
 
@@ -38,7 +38,7 @@ Search for "SideMirror" in the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
 
 ### Submitting Feedback
 
-Click "Submit Review" to send all comments to the active AI terminal.
+Click "Send to AI" to send all comments to the active AI terminal.
 
 ## Configuration
 
@@ -94,3 +94,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [Claude Code](https://claude.ai/claude-code) by Anthropic
 - [Codex](https://openai.com/codex) by OpenAI
+- [Gemini](https://ai.google.dev) by Google

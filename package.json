@@ -2,7 +2,7 @@
   "name": "sidemirror",
   "displayName": "SideMirror",
   "description": "Real-time code review interface for AI coding assistants",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
@@ -21,7 +21,8 @@
     "vibe coding",
     "code review",
     "claude",
-    "codex"
+    "codex",
+    "gemini"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -35,7 +36,7 @@
       },
       {
         "command": "sidemirror.submitComments",
-        "title": "SideMirror: Submit Comments to AI"
+        "title": "SideMirror: Send Comments to AI"
       },
       {
         "command": "sidemirror.addComment",
@@ -65,7 +66,7 @@
         "sidemirror.autoDetect": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically detect Claude Code and Codex execution"
+          "description": "Automatically detect Claude Code, Codex, and Gemini CLI execution"
         },
         "sidemirror.autoShowPanel": {
           "type": "boolean",

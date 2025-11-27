@@ -13,13 +13,13 @@ export class SubmitCommentsUseCase {
 
     async execute(session: AISession | undefined): Promise<void> {
         if (!session) {
-            this.notificationPort.showWarning('No active AI session detected (Claude Code or Codex)');
+            this.notificationPort.showWarning('No active AI session detected (Claude Code, Codex, or Gemini)');
             return;
         }
 
         const comments = await this.commentRepository.findActive();
         if (comments.length === 0) {
-            this.notificationPort.showInfo('No new comments to submit');
+            this.notificationPort.showInfo('No new comments to send');
             return;
         }
 
@@ -32,7 +32,7 @@ export class SubmitCommentsUseCase {
         await this.commentRepository.markAsSubmitted(ids);
 
         this.notificationPort.showInfo(
-            `Submitted ${comments.length} comments to ${session.displayName}`
+            `Sent ${comments.length} comments to ${session.displayName}`
         );
     }
 
@@ -43,7 +43,7 @@ export class SubmitCommentsUseCase {
             grouped[c.file].push(c);
         });
 
-        const parts: string[] = ['Please implement the following feedback:'];
+        const parts: string[] = ['Here are my comments and questions based on the changes. Please review and respond:'];
 
         for (const [file, fileComments] of Object.entries(grouped)) {
             parts.push(`\nFile: ${file}`);

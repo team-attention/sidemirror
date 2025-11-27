@@ -1,4 +1,4 @@
-export type AIType = 'claude' | 'codex';
+export type AIType = 'claude' | 'codex' | 'gemini';
 
 export interface AISessionData {
     type: AIType;
@@ -18,7 +18,9 @@ export class AISession {
     }
 
     get displayName(): string {
-        return this.type === 'claude' ? 'Claude' : 'Codex';
+        if (this.type === 'claude') return 'Claude';
+        if (this.type === 'codex') return 'Codex';
+        return 'Gemini';
     }
 
     static create(type: AIType, terminalId: string): AISession {

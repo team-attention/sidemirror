@@ -48,6 +48,9 @@ export class AIDetectionController {
             } else if (this.isCodexCommand(commandLine)) {
                 console.log('Codex detected!');
                 await this.activateSideMirror('codex', terminal);
+            } else if (this.isGeminiCommand(commandLine)) {
+                console.log('Gemini CLI detected!');
+                await this.activateSideMirror('gemini', terminal);
             }
         } catch (error) {
             console.error('Error in handleCommandStart:', error);
@@ -60,6 +63,15 @@ export class AIDetectionController {
 
     private isCodexCommand(commandLine: string): boolean {
         return /\bcodex\b/.test(commandLine);
+    }
+
+    private isGeminiCommand(commandLine: string): boolean {
+        const normalized = commandLine.toLowerCase();
+        return (
+            /\bgemini\b/.test(normalized) ||
+            /@google\/generative-ai-cli/.test(normalized) ||
+            /\bgcloud\s+ai\s+gemini\b/.test(normalized)
+        );
     }
 
     private async activateSideMirror(type: AIType, terminal: vscode.Terminal): Promise<void> {
