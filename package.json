@@ -2,7 +2,7 @@
   "name": "sidemirror",
   "displayName": "SideMirror",
   "description": "Real-time code review interface for AI coding assistants",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
