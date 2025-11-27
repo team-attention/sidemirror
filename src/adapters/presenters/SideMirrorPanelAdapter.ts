@@ -688,6 +688,10 @@ export class SideMirrorPanelAdapter implements IPanelPort {
           switch (message.type) {
             case 'fileChanged':
               addFile(message.file);
+              // Auto-refresh diff if currently viewing this file
+              if (currentFile === message.file) {
+                vscode.postMessage({ type: 'openFile', file: message.file });
+              }
               break;
             case 'commentAdded':
               addComment(message.comment);
