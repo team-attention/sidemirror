@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ITerminalPort } from '../../application/ports/ITerminalPort';
+import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort';
 
 export class VscodeTerminalGateway implements ITerminalPort {
     private terminals = new Map<string, vscode.Terminal>();

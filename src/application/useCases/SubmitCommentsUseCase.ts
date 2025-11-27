@@ -1,10 +1,11 @@
 import { Comment } from '../../domain/entities/Comment';
 import { AISession } from '../../domain/entities/AISession';
-import { ICommentRepository } from '../../domain/repositories/ICommentRepository';
-import { ITerminalPort } from '../ports/ITerminalPort';
-import { INotificationPort } from '../ports/INotificationPort';
+import { ICommentRepository } from '../ports/outbound/ICommentRepository';
+import { ITerminalPort } from '../ports/outbound/ITerminalPort';
+import { INotificationPort } from '../ports/outbound/INotificationPort';
+import { ISubmitCommentsUseCase } from '../ports/inbound/ISubmitCommentsUseCase';
 
-export class SubmitCommentsUseCase {
+export class SubmitCommentsUseCase implements ISubmitCommentsUseCase {
     constructor(
         private readonly commentRepository: ICommentRepository,
         private readonly terminalPort: ITerminalPort,

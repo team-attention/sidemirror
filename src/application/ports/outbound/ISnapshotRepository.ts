@@ -1,4 +1,4 @@
-import { FileSnapshot } from '../entities/FileSnapshot';
+import { FileSnapshot } from '../../../domain/entities/FileSnapshot';
 
 export interface ISnapshotRepository {
     save(snapshot: FileSnapshot): Promise<void>;

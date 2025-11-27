@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { INotificationPort } from '../../application/ports/INotificationPort';
+import { INotificationPort } from '../../../application/ports/outbound/INotificationPort';
 
 export class VscodeNotificationGateway implements INotificationPort {
     showInfo(message: string): void {

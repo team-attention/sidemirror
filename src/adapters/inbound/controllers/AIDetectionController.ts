@@ -1,15 +1,15 @@
 import * as vscode from 'vscode';
-import { AISession, AIType } from '../../domain/entities/AISession';
-import { ISnapshotRepository } from '../../domain/repositories/ISnapshotRepository';
-import { CaptureSnapshotsUseCase } from '../../application/useCases/CaptureSnapshotsUseCase';
-import { VscodeTerminalGateway } from '../gateways/VscodeTerminalGateway';
-import { SidecarPanelAdapter } from '../presenters/SidecarPanelAdapter';
+import { AISession, AIType } from '../../../domain/entities/AISession';
+import { ISnapshotRepository } from '../../../application/ports/outbound/ISnapshotRepository';
+import { ICaptureSnapshotsUseCase } from '../../../application/ports/inbound/ICaptureSnapshotsUseCase';
+import { VscodeTerminalGateway } from '../../outbound/gateways/VscodeTerminalGateway';
+import { SidecarPanelAdapter } from '../../outbound/presenters/SidecarPanelAdapter';
 
 export class AIDetectionController {
     private activeAISessions = new Map<string, AISession>();
 
     constructor(
-        private readonly captureSnapshotsUseCase: CaptureSnapshotsUseCase,
+        private readonly captureSnapshotsUseCase: ICaptureSnapshotsUseCase,
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly terminalGateway: VscodeTerminalGateway,
         private readonly getExtensionContext: () => vscode.ExtensionContext

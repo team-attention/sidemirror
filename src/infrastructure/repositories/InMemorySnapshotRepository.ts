@@ -1,5 +1,5 @@
 import { FileSnapshot } from '../../domain/entities/FileSnapshot';
-import { ISnapshotRepository } from '../../domain/repositories/ISnapshotRepository';
+import { ISnapshotRepository } from '../../application/ports/outbound/ISnapshotRepository';
 
 export class InMemorySnapshotRepository implements ISnapshotRepository {
     private snapshots = new Map<string, FileSnapshot>();

@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { IGitPort } from '../../application/ports/IGitPort';
+import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 
 export class VscodeGitGateway implements IGitPort {
     async isGitRepository(workspaceRoot: string): Promise<boolean> {

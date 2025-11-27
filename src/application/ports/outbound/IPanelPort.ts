@@ -1,4 +1,4 @@
-import { Comment } from '../../domain/entities/Comment';
+import { Comment } from '../../../domain/entities/Comment';
 
 export interface IPanelPort {
     show(): void;

@@ -1,4 +1,4 @@
-import { Comment } from '../entities/Comment';
+import { Comment } from '../../../domain/entities/Comment';
 
 export interface ICommentRepository {
     save(comment: Comment): Promise<void>;

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Comment, CommentData } from '../../domain/entities/Comment';
-import { ICommentRepository } from '../../domain/repositories/ICommentRepository';
+import { ICommentRepository } from '../../application/ports/outbound/ICommentRepository';
 
 export class JsonCommentRepository implements ICommentRepository {
     private comments: Comment[] = [];

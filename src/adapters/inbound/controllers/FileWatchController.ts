@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
-import { SidecarPanelAdapter } from '../presenters/SidecarPanelAdapter';
+import { SidecarPanelAdapter } from '../../outbound/presenters/SidecarPanelAdapter';
 
 export class FileWatchController {
     private gitignore: Ignore;

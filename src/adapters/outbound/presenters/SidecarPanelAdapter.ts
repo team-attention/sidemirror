@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { Comment } from '../../domain/entities/Comment';
-import { IPanelPort } from '../../application/ports/IPanelPort';
-import { GenerateDiffUseCase } from '../../application/useCases/GenerateDiffUseCase';
-import { AddCommentUseCase } from '../../application/useCases/AddCommentUseCase';
+import { Comment } from '../../../domain/entities/Comment';
+import { IPanelPort } from '../../../application/ports/outbound/IPanelPort';
+import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
+import { IAddCommentUseCase } from '../../../application/ports/inbound/IAddCommentUseCase';
 
 export class SidecarPanelAdapter implements IPanelPort {
     public static currentPanel: SidecarPanelAdapter | undefined;
@@ -10,8 +10,8 @@ export class SidecarPanelAdapter implements IPanelPort {
     private readonly context: vscode.ExtensionContext;
     private disposables: vscode.Disposable[] = [];
 
-    private generateDiffUseCase: GenerateDiffUseCase | undefined;
-    private addCommentUseCase: AddCommentUseCase | undefined;
+    private generateDiffUseCase: IGenerateDiffUseCase | undefined;
+    private addCommentUseCase: IAddCommentUseCase | undefined;
     private onSubmitComments: (() => void) | undefined;
 
     public static show(context: vscode.ExtensionContext): SidecarPanelAdapter {
@@ -73,8 +73,8 @@ export class SidecarPanelAdapter implements IPanelPort {
     }
 
     setUseCases(
-        generateDiffUseCase: GenerateDiffUseCase,
-        addCommentUseCase: AddCommentUseCase,
+        generateDiffUseCase: IGenerateDiffUseCase,
+        addCommentUseCase: IAddCommentUseCase,
         onSubmitComments: () => void
     ): void {
         this.generateDiffUseCase = generateDiffUseCase;

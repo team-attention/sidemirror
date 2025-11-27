@@ -9,21 +9,19 @@ import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseC
 import { GenerateDiffUseCase } from './application/useCases/GenerateDiffUseCase';
 import { CaptureSnapshotsUseCase } from './application/useCases/CaptureSnapshotsUseCase';
 
-// Adapters - Controllers
-import { AIDetectionController } from './adapters/controllers/AIDetectionController';
-import { FileWatchController } from './adapters/controllers/FileWatchController';
+// Adapters - Inbound (Controllers)
+import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
+import { FileWatchController } from './adapters/inbound/controllers/FileWatchController';
 
-// Adapters - Presenters
-import { SidecarPanelAdapter } from './adapters/presenters/SidecarPanelAdapter';
-
-// Adapters - Gateways
+// Adapters - Outbound (Presenters, Gateways)
+import { SidecarPanelAdapter } from './adapters/outbound/presenters/SidecarPanelAdapter';
 import {
     VscodeTerminalGateway,
     VscodeFileSystemGateway,
     VscodeGitGateway,
     VscodeNotificationGateway,
     FastGlobGateway,
-} from './adapters/gateways';
+} from './adapters/outbound/gateways';
 
 // Infrastructure - Repositories
 import { JsonCommentRepository } from './infrastructure/repositories/JsonCommentRepository';

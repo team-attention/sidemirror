@@ -1,16 +1,9 @@
 import { Comment } from '../../domain/entities/Comment';
-import { ICommentRepository } from '../../domain/repositories/ICommentRepository';
-import { IPanelPort } from '../ports/IPanelPort';
+import { ICommentRepository } from '../ports/outbound/ICommentRepository';
+import { IPanelPort } from '../ports/outbound/IPanelPort';
+import { IAddCommentUseCase, AddCommentInput } from '../ports/inbound/IAddCommentUseCase';
 
-export interface AddCommentInput {
-    file: string;
-    line: number;
-    endLine?: number;
-    text: string;
-    codeContext: string;
-}
-
-export class AddCommentUseCase {
+export class AddCommentUseCase implements IAddCommentUseCase {
     constructor(
         private readonly commentRepository: ICommentRepository,
         private readonly panelPort: IPanelPort

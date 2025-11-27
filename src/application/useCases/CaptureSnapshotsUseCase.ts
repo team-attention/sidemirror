@@ -1,12 +1,10 @@
 import { FileSnapshot } from '../../domain/entities/FileSnapshot';
-import { ISnapshotRepository } from '../../domain/repositories/ISnapshotRepository';
-import { IFileSystemPort } from '../ports/IFileSystemPort';
+import { ISnapshotRepository } from '../ports/outbound/ISnapshotRepository';
+import { IFileSystemPort } from '../ports/outbound/IFileSystemPort';
+import { IFileGlobber } from '../ports/outbound/IFileGlobber';
+import { ICaptureSnapshotsUseCase } from '../ports/inbound/ICaptureSnapshotsUseCase';
 
-export interface IFileGlobber {
-    glob(pattern: string, cwd: string): Promise<string[]>;
-}
-
-export class CaptureSnapshotsUseCase {
+export class CaptureSnapshotsUseCase implements ICaptureSnapshotsUseCase {
     constructor(
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,

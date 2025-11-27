@@ -1,5 +1,5 @@
 import fg from 'fast-glob';
-import { IFileGlobber } from '../../application/useCases/CaptureSnapshotsUseCase';
+import { IFileGlobber } from '../../../application/ports/outbound/IFileGlobber';
 
 export class FastGlobGateway implements IFileGlobber {
     async glob(pattern: string, cwd: string): Promise<string[]> {

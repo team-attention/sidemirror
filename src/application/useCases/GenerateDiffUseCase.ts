@@ -1,10 +1,11 @@
 import { DiffService } from '../../domain/services/DiffService';
-import { ISnapshotRepository } from '../../domain/repositories/ISnapshotRepository';
-import { IFileSystemPort } from '../ports/IFileSystemPort';
-import { IGitPort } from '../ports/IGitPort';
-import { IPanelPort } from '../ports/IPanelPort';
+import { ISnapshotRepository } from '../ports/outbound/ISnapshotRepository';
+import { IFileSystemPort } from '../ports/outbound/IFileSystemPort';
+import { IGitPort } from '../ports/outbound/IGitPort';
+import { IPanelPort } from '../ports/outbound/IPanelPort';
+import { IGenerateDiffUseCase } from '../ports/inbound/IGenerateDiffUseCase';
 
-export class GenerateDiffUseCase {
+export class GenerateDiffUseCase implements IGenerateDiffUseCase {
     constructor(
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,

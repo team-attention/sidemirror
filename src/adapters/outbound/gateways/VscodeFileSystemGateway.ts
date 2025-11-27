@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { IFileSystemPort } from '../../application/ports/IFileSystemPort';
+import { IFileSystemPort } from '../../../application/ports/outbound/IFileSystemPort';
 
 export class VscodeFileSystemGateway implements IFileSystemPort {
     private workspaceRoot: string | undefined;
