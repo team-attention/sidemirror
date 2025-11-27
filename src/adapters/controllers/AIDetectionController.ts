@@ -91,7 +91,7 @@ export class AIDetectionController {
             console.error('Failed to capture snapshots:', error);
         }
 
-        await this.moveTerminalToSide(terminal);
+        await this.moveTerminalToSide();
 
         await vscode.commands.executeCommand('sidemirror.showPanel');
 
@@ -117,8 +117,11 @@ export class AIDetectionController {
         return `terminal-${terminal.processId || Date.now()}`;
     }
 
-    private async moveTerminalToSide(terminal: vscode.Terminal): Promise<void> {
-        terminal.show();
+    private async moveTerminalToSide(): Promise<void> {
+        // Skip if panel is already open to avoid terminal showing on every Claude command
+        if (SideMirrorPanelAdapter.currentPanel) {
+            return;
+        }
 
         try {
             await vscode.commands.executeCommand('workbench.action.terminal.moveIntoEditor');
