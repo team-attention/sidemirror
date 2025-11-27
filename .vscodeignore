@@ -2,8 +2,9 @@
 .vscode/**
 .vscode-test/**
 src/**
+out/**
 **/*.ts
-!out/**/*.js
+!dist/**
 
 # Dependencies (bundled separately)
 node_modules/**
