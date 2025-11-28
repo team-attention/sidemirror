@@ -1,5 +1,4 @@
 import { DiffResult } from '../../domain/entities/Diff';
-import { IPanelPort } from '../ports/outbound/IPanelPort';
 import {
     PanelState,
     FileInfo,
@@ -10,13 +9,19 @@ import {
 import { IPanelStateManager } from './IPanelStateManager';
 
 /**
+ * Render callback type
+ * UI adapter sets this callback to receive state updates
+ */
+export type RenderCallback = (state: PanelState) => void;
+
+/**
  * Panel state manager implementation
  *
- * Manages UI state and automatically triggers render on changes.
+ * Manages UI state and notifies via callback on changes.
  */
 export class PanelStateManager implements IPanelStateManager {
     private state: PanelState;
-    private panelPort: IPanelPort | null = null;
+    private renderCallback: RenderCallback | null = null;
     private baselineSet: Set<string> = new Set();
 
     constructor() {
@@ -24,18 +29,18 @@ export class PanelStateManager implements IPanelStateManager {
     }
 
     /**
-     * Set the panel port (called when panel is created)
+     * Set render callback (called by UI adapter)
      */
-    setPanelPort(panelPort: IPanelPort): void {
-        this.panelPort = panelPort;
+    setRenderCallback(callback: RenderCallback): void {
+        this.renderCallback = callback;
         this.render();
     }
 
     /**
-     * Clear the panel port (called when panel is disposed)
+     * Clear render callback (called when panel is disposed)
      */
-    clearPanelPort(): void {
-        this.panelPort = null;
+    clearRenderCallback(): void {
+        this.renderCallback = null;
     }
 
     getState(): PanelState {
@@ -45,14 +50,13 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Session file operations =====
 
     addSessionFile(file: FileInfo): void {
-        const exists = this.state.sessionFiles.some((f) => f.path === file.path);
-        if (!exists) {
-            this.state = {
-                ...this.state,
-                sessionFiles: [...this.state.sessionFiles, file],
-            };
-            this.render();
-        }
+        // Remove if exists, then add to front (most recent first)
+        const filtered = this.state.sessionFiles.filter((f) => f.path !== file.path);
+        this.state = {
+            ...this.state,
+            sessionFiles: [file, ...filtered],
+        };
+        this.render();
     }
 
     removeSessionFile(path: string): void {
@@ -215,8 +219,8 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Private =====
 
     private render(): void {
-        if (this.panelPort) {
-            this.panelPort.render(this.state);
+        if (this.renderCallback) {
+            this.renderCallback(this.state);
         }
     }
 }

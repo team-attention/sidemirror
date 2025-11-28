@@ -8,7 +8,7 @@ import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { IFileGlobber } from '../../../application/ports/outbound/IFileGlobber';
 import { FileInfo } from '../../../application/ports/outbound/PanelState';
 import { VscodeTerminalGateway } from '../../outbound/gateways/VscodeTerminalGateway';
-import { SidecarPanelAdapter } from '../../outbound/presenters/SidecarPanelAdapter';
+import { SidecarPanelAdapter } from '../ui/SidecarPanelAdapter';
 
 export class AIDetectionController {
     private activeAISessions = new Map<string, AISession>();

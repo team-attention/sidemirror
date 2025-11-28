@@ -125,7 +125,10 @@ export class FileWatchController {
                 const isSelectedFile = currentState.selectedFile === relativePath;
 
                 if (this.generateDiffUseCase && (isFirstFile || isSelectedFile)) {
-                    await this.generateDiffUseCase.execute(relativePath);
+                    const diffResult = await this.generateDiffUseCase.execute(relativePath);
+                    if (diffResult) {
+                        this.panelStateManager.showDiff(diffResult);
+                    }
                 }
             }
         };

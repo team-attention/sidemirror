@@ -1,17 +1,16 @@
 import * as vscode from 'vscode';
-import { IPanelPort } from '../../../application/ports/outbound/IPanelPort';
 import { PanelState } from '../../../application/ports/outbound/PanelState';
 import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
 import { IAddCommentUseCase } from '../../../application/ports/inbound/IAddCommentUseCase';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 
 /**
- * Webview Panel Adapter
+ * Webview Panel Adapter (Inbound Adapter)
  *
- * Implements IPanelPort with a single render(state) method.
- * Also handles inbound messages from webview (user interactions).
+ * Handles user interactions from webview and calls UseCases.
+ * Receives state updates via callback and renders to webview.
  */
-export class SidecarPanelAdapter implements IPanelPort {
+export class SidecarPanelAdapter {
     public static currentPanel: SidecarPanelAdapter | undefined;
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
@@ -21,7 +20,7 @@ export class SidecarPanelAdapter implements IPanelPort {
     // Inbound handlers (webview → application)
     private generateDiffUseCase: IGenerateDiffUseCase | undefined;
     private addCommentUseCase: IAddCommentUseCase | undefined;
-    private onSubmitComments: (() => void) | undefined;
+    private onSubmitComments: (() => Promise<void>) | undefined;
     private panelStateManager: IPanelStateManager | undefined;
 
     public static create(context: vscode.ExtensionContext): SidecarPanelAdapter {
@@ -58,28 +57,16 @@ export class SidecarPanelAdapter implements IPanelPort {
             async message => {
                 switch (message.type) {
                     case 'submitComments':
-                        this.onSubmitComments?.();
+                        await this.handleSubmitComments();
                         break;
                     case 'selectFile':
-                        if (message.file && this.generateDiffUseCase) {
-                            await this.generateDiffUseCase.execute(message.file);
-                        }
+                        await this.handleSelectFile(message.file);
                         break;
                     case 'addComment':
-                        if (this.addCommentUseCase) {
-                            await this.addCommentUseCase.execute({
-                                file: message.file,
-                                line: message.line,
-                                endLine: message.endLine,
-                                text: message.text,
-                                codeContext: message.context || '',
-                            });
-                        }
+                        await this.handleAddComment(message);
                         break;
                     case 'toggleUncommitted':
-                        if (this.panelStateManager) {
-                            this.panelStateManager.toggleShowUncommitted();
-                        }
+                        this.panelStateManager?.toggleShowUncommitted();
                         break;
                 }
             },
@@ -94,7 +81,7 @@ export class SidecarPanelAdapter implements IPanelPort {
     setUseCases(
         generateDiffUseCase: IGenerateDiffUseCase,
         addCommentUseCase: IAddCommentUseCase,
-        onSubmitComments: () => void,
+        onSubmitComments: () => Promise<void>,
         panelStateManager?: IPanelStateManager
     ): void {
         this.generateDiffUseCase = generateDiffUseCase;
@@ -110,7 +97,58 @@ export class SidecarPanelAdapter implements IPanelPort {
         this.onDisposeCallback = callback;
     }
 
-    // ===== IPanelPort implementation =====
+    // ===== Inbound message handlers =====
+
+    private async handleSelectFile(file: string): Promise<void> {
+        if (!file || !this.generateDiffUseCase || !this.panelStateManager) return;
+
+        const diffResult = await this.generateDiffUseCase.execute(file);
+
+        if (diffResult === null) {
+            // No diff - remove from session files
+            this.panelStateManager.removeSessionFile(file);
+        } else {
+            // Show diff
+            this.panelStateManager.showDiff(diffResult);
+        }
+    }
+
+    private async handleAddComment(message: {
+        file: string;
+        line: number;
+        endLine?: number;
+        text: string;
+        context?: string;
+    }): Promise<void> {
+        if (!this.addCommentUseCase || !this.panelStateManager) return;
+
+        const comment = await this.addCommentUseCase.execute({
+            file: message.file,
+            line: message.line,
+            endLine: message.endLine,
+            text: message.text,
+            codeContext: message.context || '',
+        });
+
+        // Update panel state with new comment
+        this.panelStateManager.addComment({
+            id: comment.id,
+            file: comment.file,
+            line: comment.line,
+            endLine: comment.endLine,
+            text: comment.text,
+            isSubmitted: comment.isSubmitted,
+            codeContext: comment.codeContext,
+            timestamp: comment.timestamp,
+        });
+    }
+
+    private async handleSubmitComments(): Promise<void> {
+        if (!this.onSubmitComments) return;
+        await this.onSubmitComments();
+    }
+
+    // ===== Render method =====
 
     /**
      * Render the panel with the given state

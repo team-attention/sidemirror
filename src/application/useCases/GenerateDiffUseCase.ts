@@ -3,7 +3,6 @@ import { DiffResult } from '../../domain/entities/Diff';
 import { ISnapshotRepository } from '../ports/outbound/ISnapshotRepository';
 import { IFileSystemPort } from '../ports/outbound/IFileSystemPort';
 import { IGitPort } from '../ports/outbound/IGitPort';
-import { IPanelStateManager } from '../services/IPanelStateManager';
 import { IGenerateDiffUseCase } from '../ports/inbound/IGenerateDiffUseCase';
 
 export class GenerateDiffUseCase implements IGenerateDiffUseCase {
@@ -11,13 +10,12 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,
         private readonly gitPort: IGitPort,
-        private readonly panelStateManager: IPanelStateManager,
         private readonly diffService: DiffService
     ) {}
 
-    async execute(relativePath: string): Promise<void> {
+    async execute(relativePath: string): Promise<DiffResult | null> {
         const workspaceRoot = this.fileSystemPort.getWorkspaceRoot();
-        if (!workspaceRoot) return;
+        if (!workspaceRoot) return null;
 
         let diffResult: DiffResult;
 
@@ -29,12 +27,10 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
         }
 
         if (diffResult.hunks.length === 0) {
-            this.panelStateManager.removeSessionFile(relativePath);
-            return;
+            return null;
         }
 
-        // Update panel state - triggers render
-        this.panelStateManager.showDiff(diffResult);
+        return diffResult;
     }
 
     private async generateSnapshotDiff(relativePath: string): Promise<DiffResult> {

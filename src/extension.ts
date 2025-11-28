@@ -16,8 +16,8 @@ import { PanelStateManager } from './application/services/PanelStateManager';
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
 import { FileWatchController } from './adapters/inbound/controllers/FileWatchController';
 
-// Adapters - Outbound (Presenters, Gateways)
-import { SidecarPanelAdapter } from './adapters/outbound/presenters/SidecarPanelAdapter';
+// Adapters - Inbound (UI)
+import { SidecarPanelAdapter } from './adapters/inbound/ui/SidecarPanelAdapter';
 import {
     VscodeTerminalGateway,
     VscodeFileSystemGateway,
@@ -62,23 +62,20 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     const addCommentUseCase = new AddCommentUseCase(
-        commentRepository,
-        panelStateManager
+        commentRepository
     );
 
     const generateDiffUseCase = new GenerateDiffUseCase(
         snapshotRepository,
         fileSystemGateway,
         gitGateway,
-        panelStateManager,
         diffService
     );
 
     const submitCommentsUseCase = new SubmitCommentsUseCase(
         commentRepository,
         terminalGateway,
-        notificationGateway,
-        panelStateManager
+        notificationGateway
     );
 
     // ===== Adapters Layer - Controllers =====
@@ -107,23 +104,26 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('sidecar.showPanel', () => {
             const panel = SidecarPanelAdapter.create(context);
 
-            // Connect panel to state manager
-            panelStateManager.setPanelPort(panel);
+            // Connect state manager to panel via render callback
+            panelStateManager.setRenderCallback((state) => panel.render(state));
 
             // Set up inbound handlers for panel
             panel.setUseCases(
                 generateDiffUseCase,
                 addCommentUseCase,
-                () => {
+                async () => {
                     const session = aiDetectionController.getActiveSession();
-                    submitCommentsUseCase.execute(session);
+                    const result = await submitCommentsUseCase.execute(session);
+                    if (result) {
+                        panelStateManager.markCommentsAsSubmitted(result.submittedIds);
+                    }
                 },
                 panelStateManager
             );
 
             // Clean up when panel is disposed
             panel.onDispose(() => {
-                panelStateManager.clearPanelPort();
+                panelStateManager.clearRenderCallback();
             });
         })
     );

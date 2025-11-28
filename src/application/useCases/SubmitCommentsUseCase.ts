@@ -3,27 +3,25 @@ import { AISession } from '../../domain/entities/AISession';
 import { ICommentRepository } from '../ports/outbound/ICommentRepository';
 import { ITerminalPort } from '../ports/outbound/ITerminalPort';
 import { INotificationPort } from '../ports/outbound/INotificationPort';
-import { ISubmitCommentsUseCase } from '../ports/inbound/ISubmitCommentsUseCase';
-import { IPanelStateManager } from '../services/IPanelStateManager';
+import { ISubmitCommentsUseCase, SubmitCommentsResult } from '../ports/inbound/ISubmitCommentsUseCase';
 
 export class SubmitCommentsUseCase implements ISubmitCommentsUseCase {
     constructor(
         private readonly commentRepository: ICommentRepository,
         private readonly terminalPort: ITerminalPort,
-        private readonly notificationPort: INotificationPort,
-        private readonly panelStateManager: IPanelStateManager
+        private readonly notificationPort: INotificationPort
     ) {}
 
-    async execute(session: AISession | undefined): Promise<void> {
+    async execute(session: AISession | undefined): Promise<SubmitCommentsResult | null> {
         if (!session) {
             this.notificationPort.showWarning('No active AI session detected (Claude Code, Codex, or Gemini)');
-            return;
+            return null;
         }
 
         const comments = await this.commentRepository.findActive();
         if (comments.length === 0) {
             this.notificationPort.showInfo('No new comments to send');
-            return;
+            return null;
         }
 
         const prompt = this.formatCommentsAsPrompt(comments);
@@ -33,11 +31,15 @@ export class SubmitCommentsUseCase implements ISubmitCommentsUseCase {
 
         const ids = comments.map(c => c.id);
         await this.commentRepository.markAsSubmitted(ids);
-        this.panelStateManager.markCommentsAsSubmitted(ids);
 
         this.notificationPort.showInfo(
             `Sent ${comments.length} comments to ${session.displayName}`
         );
+
+        return {
+            submittedIds: ids,
+            count: comments.length,
+        };
     }
 
     private formatCommentsAsPrompt(comments: Comment[]): string {
