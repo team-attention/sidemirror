@@ -183,29 +183,62 @@ export class SidecarPanelAdapter {
     }
 
     private findScopeLabel(chunk: DiffChunk, scopes: ScopeInfo[]): string | null {
-        // Check if this is a new file (oldStart is 0)
         if (chunk.oldStart === 0) {
             return 'New file';
         }
 
-        const chunkStart = chunk.newStart;
-        const chunkEnd = chunk.newStart + chunk.lines.length;
+        // Extract line numbers of actually changed lines (not context)
+        const changedLineNumbers: number[] = [];
+        let lastNewLineNumber = chunk.newStart;
 
-        // Find all scopes that intersect with this chunk
+        for (const line of chunk.lines) {
+            if (line.newLineNumber) {
+                lastNewLineNumber = line.newLineNumber;
+            }
+
+            if (line.type === 'addition' && line.newLineNumber) {
+                changedLineNumbers.push(line.newLineNumber);
+            } else if (line.type === 'deletion') {
+                // For deletions, use the position in the new file (where the deletion occurred)
+                changedLineNumbers.push(lastNewLineNumber);
+            }
+        }
+
+        if (changedLineNumbers.length === 0) {
+            return null;
+        }
+
+        const chunkStart = Math.min(...changedLineNumbers);
+        const chunkEnd = Math.max(...changedLineNumbers);
+
+        // Structural scope kinds (always meaningful)
+        const structuralKinds = ['function', 'method', 'class', 'module', 'namespace', 'interface', 'enum'];
+
+        // Find scopes that intersect with the changed lines
         const intersectingScopes: ScopeInfo[] = [];
+
         for (const scope of scopes) {
-            // Check if scope intersects with chunk
+            // Include structural kinds
+            // Include variable/constant only if top-level (no containerName)
+            const isStructural = structuralKinds.includes(scope.kind);
+            const isTopLevelDeclaration =
+                (scope.kind === 'variable' || scope.kind === 'constant') && !scope.containerName;
+
+            if (!isStructural && !isTopLevelDeclaration) {
+                continue;
+            }
+
+            // Check if scope intersects with changed lines
             if (scope.startLine <= chunkEnd && scope.endLine >= chunkStart) {
                 intersectingScopes.push(scope);
             }
         }
 
         if (intersectingScopes.length === 0) {
-            return 'root';
+            return null;
         }
 
-        // Filter to get the most specific (smallest) scopes
-        // Remove scopes that contain other intersecting scopes
+        // Filter to most specific scopes (remove parent scopes that contain child scopes)
         const specificScopes = intersectingScopes.filter(scope => {
             return !intersectingScopes.some(other =>
                 other !== scope &&
@@ -216,12 +249,10 @@ export class SidecarPanelAdapter {
 
         // Format scope names
         const scopeNames = specificScopes.map(scope => {
-            const prefix = scope.containerName ? `${scope.containerName}.` : '';
             const suffix = scope.kind === 'method' || scope.kind === 'function' ? '()' : '';
-            return `${prefix}${scope.name}${suffix}`;
+            return `${scope.name}${suffix}`;
         });
 
-        // Remove duplicates and join
         const uniqueNames = [...new Set(scopeNames)];
         return uniqueNames.join(', ');
     }
@@ -961,9 +992,9 @@ export class SidecarPanelAdapter {
         }
 
         .comment-form-row td {
-          background: transparent !important;
+          padding: 0 !important;
+          border: none !important;
         }
-
 
         .inline-comment-form {
           display: none;
@@ -1861,8 +1892,8 @@ export class SidecarPanelAdapter {
         }
 
         function showInlineCommentForm(currentFile, startLine, endLine) {
-          const existingFormRow = document.querySelector('.comment-form-row');
-          if (existingFormRow) existingFormRow.remove();
+          const existingForm = document.querySelector('.comment-form-row');
+          if (existingForm) existingForm.remove();
           if (!selectedLineElement) return;
 
           const isSingleLine = !endLine || startLine === endLine;
@@ -1872,15 +1903,17 @@ export class SidecarPanelAdapter {
 
           const formRow = document.createElement('tr');
           formRow.className = 'comment-form-row';
-          formRow.dataset.currentFile = currentFile;
+          formRow.dataset.file = currentFile;
+          formRow.dataset.start = startLine || selectedLineNum;
+          formRow.dataset.end = endLine || startLine || selectedLineNum;
           formRow.innerHTML = \`
-            <td colspan="4" style="padding: 0; border: none;">
-              <div class="inline-comment-form active" data-start="\${startLine || selectedLineNum}" data-end="\${endLine || startLine || selectedLineNum}">
+            <td colspan="2">
+              <div class="inline-comment-form active">
                 <div class="comment-form-header">Comment on \${lineDisplay}</div>
                 <textarea class="comment-textarea" placeholder="Leave a comment..."></textarea>
                 <div class="comment-form-actions">
-                  <button class="btn-secondary" onclick="cancelCommentForm(this)">Cancel</button>
-                  <button onclick="submitInlineComment(this)">Add Comment</button>
+                  <button class="btn-secondary" onclick="cancelCommentForm()">Cancel</button>
+                  <button onclick="submitInlineComment()">Add Comment</button>
                 </div>
               </div>
             </td>
@@ -1889,21 +1922,22 @@ export class SidecarPanelAdapter {
           formRow.querySelector('textarea').focus();
         }
 
-        window.cancelCommentForm = function(btn) {
+        window.cancelCommentForm = function() {
           clearLineSelection();
-          const formRow = btn.closest('.comment-form-row');
+          const formRow = document.querySelector('.comment-form-row');
           if (formRow) formRow.remove();
           selectionStartLine = null;
           selectionEndLine = null;
         };
 
-        window.submitInlineComment = function(btn) {
-          const formRow = btn.closest('.comment-form-row');
-          const form = btn.closest('.inline-comment-form');
-          const text = form.querySelector('textarea').value;
-          const startLine = form.dataset.start;
-          const endLine = form.dataset.end;
-          const currentFile = formRow.dataset.currentFile;
+        window.submitInlineComment = function() {
+          const formRow = document.querySelector('.comment-form-row');
+          if (!formRow) return;
+
+          const text = formRow.querySelector('textarea').value;
+          const startLine = formRow.dataset.start;
+          const endLine = formRow.dataset.end;
+          const currentFile = formRow.dataset.file;
 
           if (text && currentFile) {
             vscode.postMessage({
