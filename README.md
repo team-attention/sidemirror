@@ -2,7 +2,7 @@
 
 **Real-time code review interface for AI coding assistants**
 
-Sidecar automatically detects AI coding tools like Claude Code, Codex, and Gemini CLI, displaying file changes in a side panel so you can review, comment, and provide feedback in real-time.
+Sidecar automatically detects AI coding tools like Claude Code, Codex, and Gemini CLI, displaying file changes in a side panel so you can review and provide feedback in real-time.
 
 ## Demo
 
@@ -11,11 +11,12 @@ https://github.com/user-attachments/assets/b893de21-bf19-430f-97c6-0ff544a7ac25
 ## Features
 
 - **Auto-Detection**: Automatically activates when Claude Code, Codex, or Gemini CLI starts in terminal
-- **Diff Viewer**: GitHub-style unified diff display with line numbers
+- **Diff Viewer**: Human-friendly diff display with collapsible chunks and scope labels
+- **Scope Detection**: Shows function/class names for each change using LSP
+- **File Tree View**: Hierarchical file list with status badges (A/M/D)
+- **Markdown Preview**: Preview mode for markdown files
 - **Line Comments**: Click or drag-select lines to add review comments
 - **Direct Submission**: Send comments directly to the AI terminal
-- **Whitelist Support**: Track gitignored files (build outputs, env files, etc.)
-- **Snapshot System**: Captures file state at session start for accurate diffs
 
 ## Installation
 
@@ -37,12 +38,11 @@ Search for "Sidecar" in the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
 
 ### Adding Comments
 
-- **From diff viewer**: Click the `+` button on any line, or drag to select multiple lines
-- **From editor**: Right-click and select `Sidecar: Add Comment`
+Click or drag-select lines in the diff viewer to add comments.
 
 ### Submitting Feedback
 
-Click "Send to AI" to send all comments to the active AI terminal.
+Click "Ask AI" to send all comments to the active AI terminal.
 
 ## Configuration
 
@@ -52,7 +52,7 @@ Click "Send to AI" to send all comments to the active AI terminal.
 | `sidecar.autoShowPanel` | `true` | Auto-show panel on AI detection |
 | `sidecar.includeFiles` | `[]` | Glob patterns for gitignored files to track |
 
-### Whitelist Example
+### Include Files Example
 
 Track build outputs and environment files:
 
@@ -65,17 +65,6 @@ Track build outputs and environment files:
   ]
 }
 ```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `Sidecar: Show Panel` | Open the review panel |
-| `Sidecar: Focus Panel` | Focus the review panel if already open |
-| `Sidecar: Add Comment` | Add comment at cursor position |
-| `Sidecar: Submit Comments to AI` | Send comments to AI terminal |
-| `Sidecar: Add File/Pattern to Whitelist` | Add pattern to track |
-| `Sidecar: Manage Whitelist` | View/remove whitelist patterns |
 
 ## Requirements
 
