@@ -47,6 +47,9 @@ export interface IPanelStateManager {
     setTreeView(isTree: boolean): void;
     setDiffViewMode(mode: DiffViewMode): void;
 
+    // Search operations
+    setSearchQuery(query: string): void;
+
     // Reset state (e.g., when panel closes)
     reset(): void;
 }
