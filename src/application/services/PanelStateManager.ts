@@ -286,6 +286,22 @@ export class PanelStateManager implements IPanelStateManager {
         }
     }
 
+    // ===== Search operations =====
+
+    setSearchQuery(query: string): void {
+        if (this.state.searchQuery !== query) {
+            this.state = {
+                ...this.state,
+                searchQuery: query,
+            };
+            this.render();
+        }
+    }
+
+    clearSearch(): void {
+        this.setSearchQuery('');
+    }
+
     // ===== Reset =====
 
     reset(): void {

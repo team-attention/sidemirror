@@ -98,6 +98,9 @@ export class SidecarPanelAdapter {
                             this.panelStateManager.setDiffViewMode(current === 'preview' ? 'diff' : 'preview');
                         }
                         break;
+                    case 'setSearchQuery':
+                        this.panelStateManager?.setSearchQuery(message.query);
+                        break;
                 }
             },
             null,
@@ -619,10 +622,6 @@ export class SidecarPanelAdapter {
           background: var(--vscode-button-hoverBackground);
         }
 
-        .view-toggle {
-          margin-bottom: 8px;
-        }
-
         .view-mode-toggle {
           margin-left: auto;
         }
@@ -949,11 +948,6 @@ export class SidecarPanelAdapter {
           display: none;
         }
 
-        .chunk-collapse-all {
-          padding: 4px 8px;
-          border-bottom: 1px solid var(--vscode-panel-border);
-        }
-
         .diff-line {
           border: none;
         }
@@ -1193,6 +1187,156 @@ export class SidecarPanelAdapter {
           font-size: 11px;
           color: var(--vscode-descriptionForeground);
         }
+
+        .files-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+
+        .files-toolbar .toggle-btn {
+          flex-shrink: 0;
+        }
+
+        .search-container {
+          position: relative;
+          flex: 1;
+        }
+
+        .search-input {
+          width: 100%;
+          padding: 6px 28px 6px 8px;
+          background: var(--vscode-input-background);
+          color: var(--vscode-input-foreground);
+          border: 1px solid var(--vscode-input-border, transparent);
+          border-radius: 4px;
+          font-size: 12px;
+          outline: none;
+        }
+
+        .search-input:focus {
+          border-color: var(--vscode-focusBorder);
+        }
+
+        .search-input::placeholder {
+          color: var(--vscode-input-placeholderForeground);
+        }
+
+        .search-clear {
+          position: absolute;
+          right: 4px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 20px;
+          height: 20px;
+          padding: 0;
+          background: transparent;
+          border: none;
+          color: var(--vscode-descriptionForeground);
+          cursor: pointer;
+          font-size: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .search-clear:hover {
+          color: var(--vscode-foreground);
+        }
+
+        .search-results {
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+          margin-bottom: 4px;
+          padding: 0 4px;
+        }
+
+        .search-highlight {
+          background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+          border-radius: 2px;
+        }
+
+        .file-item.content-match::after {
+          content: '≡';
+          margin-left: 4px;
+          color: var(--vscode-descriptionForeground);
+          font-size: 10px;
+        }
+
+        .diff-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          background: var(--vscode-editorWidget-background);
+          border-bottom: 1px solid var(--vscode-panel-border);
+        }
+
+        .diff-search-wrapper {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .diff-search-input {
+          flex: 1;
+          padding: 4px 8px;
+          background: var(--vscode-input-background);
+          color: var(--vscode-input-foreground);
+          border: 1px solid var(--vscode-input-border, transparent);
+          border-radius: 3px;
+          font-size: 12px;
+          outline: none;
+        }
+
+        .diff-search-input:focus {
+          border-color: var(--vscode-focusBorder);
+        }
+
+        .diff-search-count {
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+          min-width: 50px;
+          text-align: center;
+          flex-shrink: 0;
+        }
+
+        .diff-search-nav {
+          width: 24px;
+          height: 24px;
+          padding: 0;
+          background: transparent;
+          border: none;
+          color: var(--vscode-foreground);
+          cursor: pointer;
+          border-radius: 3px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          flex-shrink: 0;
+        }
+
+        .diff-search-nav:hover {
+          background: var(--vscode-toolbar-hoverBackground);
+        }
+
+        .diff-search-nav:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+
+        .diff-search-match {
+          background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+          border-radius: 2px;
+        }
+
+        .diff-search-match.current {
+          background: var(--vscode-editor-findMatchBackground, rgba(255, 150, 50, 0.6));
+          outline: 1px solid var(--vscode-editor-findMatchBorder, #ff9632);
+        }
       </style>
     </head>
     <body class="sidebar-collapsed">
@@ -1213,6 +1357,18 @@ export class SidecarPanelAdapter {
               <div class="toggle-checkbox" id="uncommitted-toggle"></div>
             </div>
           </div>
+          <div class="files-toolbar">
+            <button class="toggle-btn" id="view-mode-toggle">List</button>
+            <div class="search-container">
+              <input type="text"
+                     id="file-search"
+                     class="search-input"
+                     placeholder="Search files..."
+                     autocomplete="off">
+              <button class="search-clear" id="search-clear" style="display: none;">×</button>
+            </div>
+          </div>
+          <div id="search-results" class="search-results" style="display: none;"></div>
           <div id="files-list">
             <div class="empty-text">Waiting for changes...</div>
           </div>
@@ -1235,6 +1391,20 @@ export class SidecarPanelAdapter {
           <span class="diff-header-title">Select a file to review</span>
           <div class="diff-stats" id="diff-stats"></div>
           <button class="sidebar-toggle" id="toggle-sidebar" aria-label="Expand file list panel">&lt;</button>
+        </div>
+
+        <div class="diff-toolbar" id="diff-toolbar" style="display: none;">
+          <button class="toggle-btn" id="diff-collapse-all">Collapse</button>
+          <div class="diff-search-wrapper">
+            <input type="text"
+                   id="diff-search-input"
+                   class="diff-search-input"
+                   placeholder="Find in diff..."
+                   autocomplete="off">
+            <span class="diff-search-count" id="diff-search-count"></span>
+            <button class="diff-search-nav" id="diff-search-prev" title="Previous (Shift+Enter)">↑</button>
+            <button class="diff-search-nav" id="diff-search-next" title="Next (Enter)">↓</button>
+          </div>
         </div>
 
         <div class="diff-container" id="diff-viewer">
@@ -1318,6 +1488,228 @@ export class SidecarPanelAdapter {
           vscode.postMessage({ type: 'toggleUncommitted' });
         });
 
+        // ===== File Search =====
+        const searchInput = document.getElementById('file-search');
+        const searchClear = document.getElementById('search-clear');
+        const searchResults = document.getElementById('search-results');
+        let searchDebounceTimer = null;
+        let currentSearchQuery = '';
+
+        searchInput.addEventListener('input', (e) => {
+          const query = e.target.value;
+          searchClear.style.display = query ? 'flex' : 'none';
+
+          // Debounce search
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = setTimeout(() => {
+            currentSearchQuery = query;
+            vscode.postMessage({ type: 'setSearchQuery', query });
+          }, 200);
+        });
+
+        searchClear.addEventListener('click', () => {
+          searchInput.value = '';
+          searchClear.style.display = 'none';
+          currentSearchQuery = '';
+          vscode.postMessage({ type: 'setSearchQuery', query: '' });
+        });
+
+        // ===== View Mode Toggle (List/Tree) =====
+        const viewModeToggle = document.getElementById('view-mode-toggle');
+        viewModeToggle.addEventListener('click', () => {
+          vscode.postMessage({ type: 'toggleViewMode' });
+        });
+
+        // ===== Diff Toolbar (Collapse + Search) =====
+        const diffToolbar = document.getElementById('diff-toolbar');
+        const diffCollapseAll = document.getElementById('diff-collapse-all');
+        const diffSearchInput = document.getElementById('diff-search-input');
+        const diffSearchCount = document.getElementById('diff-search-count');
+        const diffSearchPrev = document.getElementById('diff-search-prev');
+        const diffSearchNext = document.getElementById('diff-search-next');
+
+        let diffSearchQuery = '';
+        let diffSearchMatches = [];
+        let diffSearchCurrentIndex = -1;
+
+        // Collapse all button
+        diffCollapseAll.addEventListener('click', () => {
+          vscode.postMessage({ type: 'toggleAllChunks' });
+        });
+
+        // Focus search with Ctrl+F / Cmd+F
+        document.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            diffSearchInput.focus();
+            diffSearchInput.select();
+          }
+        });
+
+        function closeDiffSearch() {
+          diffSearchQuery = '';
+          diffSearchInput.value = '';
+          diffSearchMatches = [];
+          diffSearchCurrentIndex = -1;
+          clearDiffHighlights();
+          diffSearchCount.textContent = '';
+        }
+
+        diffSearchInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            closeDiffSearch();
+            diffSearchInput.blur();
+          } else if (e.key === 'Enter') {
+            if (e.shiftKey) {
+              navigateDiffSearch(-1);
+            } else {
+              navigateDiffSearch(1);
+            }
+          }
+        });
+
+        diffSearchInput.addEventListener('input', (e) => {
+          diffSearchQuery = e.target.value;
+          performDiffSearch();
+        });
+
+        diffSearchPrev.addEventListener('click', () => navigateDiffSearch(-1));
+        diffSearchNext.addEventListener('click', () => navigateDiffSearch(1));
+
+        function performDiffSearch() {
+          clearDiffHighlights();
+          diffSearchMatches = [];
+          diffSearchCurrentIndex = -1;
+
+          if (!diffSearchQuery) {
+            diffSearchCount.textContent = '';
+            updateNavButtons();
+            return;
+          }
+
+          const query = diffSearchQuery.toLowerCase();
+          const viewer = document.getElementById('diff-viewer');
+          const contentCells = viewer.querySelectorAll('.diff-line-content');
+
+          contentCells.forEach((cell, cellIndex) => {
+            const text = cell.textContent;
+            const lowerText = text.toLowerCase();
+            let startIndex = 0;
+            let matchIndex;
+
+            while ((matchIndex = lowerText.indexOf(query, startIndex)) !== -1) {
+              diffSearchMatches.push({
+                cell,
+                cellIndex,
+                start: matchIndex,
+                end: matchIndex + query.length,
+                text: text.substring(matchIndex, matchIndex + query.length)
+              });
+              startIndex = matchIndex + 1;
+            }
+          });
+
+          // Highlight all matches
+          highlightDiffMatches();
+
+          // Update count
+          if (diffSearchMatches.length > 0) {
+            diffSearchCurrentIndex = 0;
+            updateCurrentMatch();
+            diffSearchCount.textContent = \`1 of \${diffSearchMatches.length}\`;
+          } else {
+            diffSearchCount.textContent = 'No results';
+          }
+
+          updateNavButtons();
+        }
+
+        function highlightDiffMatches() {
+          // Group matches by cell
+          const matchesByCell = new Map();
+          diffSearchMatches.forEach((match, index) => {
+            if (!matchesByCell.has(match.cell)) {
+              matchesByCell.set(match.cell, []);
+            }
+            matchesByCell.get(match.cell).push({ ...match, index });
+          });
+
+          // Apply highlights
+          matchesByCell.forEach((matches, cell) => {
+            const text = cell.textContent;
+            const prefix = cell.dataset.prefix || '';
+
+            // Sort matches by position (reverse order for replacement)
+            matches.sort((a, b) => b.start - a.start);
+
+            let html = escapeHtml(text);
+
+            // Replace from end to start to preserve positions
+            matches.forEach(match => {
+              const before = html.substring(0, match.start);
+              const matchText = html.substring(match.start, match.end);
+              const after = html.substring(match.end);
+              html = before + \`<span class="diff-search-match" data-match-index="\${match.index}">\${matchText}</span>\` + after;
+            });
+
+            cell.innerHTML = html;
+            cell.dataset.prefix = prefix;
+          });
+        }
+
+        function clearDiffHighlights() {
+          const viewer = document.getElementById('diff-viewer');
+          const highlights = viewer.querySelectorAll('.diff-search-match');
+          highlights.forEach(el => {
+            const parent = el.parentNode;
+            parent.replaceChild(document.createTextNode(el.textContent), el);
+            parent.normalize();
+          });
+        }
+
+        function updateCurrentMatch() {
+          // Remove current class from all
+          document.querySelectorAll('.diff-search-match.current').forEach(el => {
+            el.classList.remove('current');
+          });
+
+          if (diffSearchCurrentIndex >= 0 && diffSearchCurrentIndex < diffSearchMatches.length) {
+            const matchEl = document.querySelector(\`.diff-search-match[data-match-index="\${diffSearchCurrentIndex}"]\`);
+            if (matchEl) {
+              matchEl.classList.add('current');
+              matchEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+        }
+
+        function navigateDiffSearch(direction) {
+          if (diffSearchMatches.length === 0) return;
+
+          diffSearchCurrentIndex += direction;
+
+          if (diffSearchCurrentIndex >= diffSearchMatches.length) {
+            diffSearchCurrentIndex = 0;
+          } else if (diffSearchCurrentIndex < 0) {
+            diffSearchCurrentIndex = diffSearchMatches.length - 1;
+          }
+
+          updateCurrentMatch();
+          diffSearchCount.textContent = \`\${diffSearchCurrentIndex + 1} of \${diffSearchMatches.length}\`;
+        }
+
+        function updateNavButtons() {
+          const hasMatches = diffSearchMatches.length > 0;
+          diffSearchPrev.disabled = !hasMatches;
+          diffSearchNext.disabled = !hasMatches;
+        }
+
+        // Re-run search when file changes
+        function onFileChange() {
+          if (diffSearchQuery) {
+            performDiffSearch();  // Re-search in new content
+          }
+        }
+
         // ===== Single message handler - state-based rendering =====
         window.addEventListener('message', event => {
           const { type, state } = event.data;
@@ -1330,14 +1722,14 @@ export class SidecarPanelAdapter {
          * Main render function - renders entire UI from state
          */
         function renderState(state) {
-          renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView);
+          renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView, state.searchQuery, state.diff);
           renderComments(state.comments);
           renderAIStatus(state.aiStatus);
           renderDiff(state.diff, state.selectedFile, state.diffViewMode);
         }
 
         // ===== File List Rendering =====
-        function renderFileList(sessionFiles, uncommittedFiles, showUncommitted, selectedFile, isTreeView) {
+        function renderFileList(sessionFiles, uncommittedFiles, showUncommitted, selectedFile, isTreeView, searchQuery, diff) {
           const list = document.getElementById('files-list');
           const toggleRow = document.getElementById('toggle-row');
           const toggleSwitch = document.getElementById('uncommitted-toggle');
@@ -1354,30 +1746,66 @@ export class SidecarPanelAdapter {
           }
 
           // Combine files for display
-          const allFiles = [...(sessionFiles || [])];
+          let allFiles = [...(sessionFiles || [])];
           if (showUncommitted && uncommittedFiles) {
             allFiles.push(...uncommittedFiles.map(f => ({ ...f, isUncommitted: true })));
           }
 
-          if (allFiles.length === 0) {
-            list.innerHTML = '<div class="empty-text">Waiting for changes...</div>';
+          // Apply search filter
+          let filteredFiles = allFiles;
+          const searchActive = searchQuery && searchQuery.trim().length > 0;
+
+          if (searchActive) {
+            const query = searchQuery.toLowerCase();
+            filteredFiles = allFiles.filter(file => {
+              // Path match
+              const pathMatch = file.path.toLowerCase().includes(query);
+              if (pathMatch) {
+                file.matchType = 'path';
+                return true;
+              }
+
+              // Content match (check diff if available and file matches)
+              if (diff && diff.file === file.path) {
+                for (const chunk of diff.chunks) {
+                  for (const line of chunk.lines) {
+                    if (line.type === 'addition' && line.content.toLowerCase().includes(query)) {
+                      file.matchType = 'content';
+                      return true;
+                    }
+                  }
+                }
+              }
+
+              return false;
+            });
+
+            // Show results count
+            searchResults.style.display = 'block';
+            searchResults.textContent = \`\${filteredFiles.length} result\${filteredFiles.length !== 1 ? 's' : ''}\`;
+          } else {
+            searchResults.style.display = 'none';
+          }
+
+          if (filteredFiles.length === 0) {
+            list.innerHTML = searchActive
+              ? '<div class="empty-text">No matching files</div>'
+              : '<div class="empty-text">Waiting for changes...</div>';
             return;
           }
 
-          // View toggle button (single toggle)
-          let html = \`
-            <div class="view-toggle">
-              <button class="toggle-btn" onclick="toggleViewMode()">\${isTreeView ? 'List' : 'Tree'}</button>
-            </div>
-          \`;
+          // Update view mode toggle button text
+          viewModeToggle.textContent = isTreeView ? 'List' : 'Tree';
+
+          let html = '';
 
           if (isTreeView) {
-            const tree = buildFileTree(allFiles);
+            const tree = buildFileTree(filteredFiles);
             html += '<div class="file-tree">';
             html += renderTreeNode(tree, selectedFile, 0);
             html += '</div>';
           } else {
-            html += allFiles.map(file => {
+            html += filteredFiles.map(file => {
               const isSelected = file.path === selectedFile;
 
               let badgeText = 'M';
@@ -1391,8 +1819,9 @@ export class SidecarPanelAdapter {
               }
 
               const uncommittedClass = file.isUncommitted ? 'uncommitted' : '';
+              const contentMatchClass = file.matchType === 'content' ? 'content-match' : '';
               return \`
-                <div class="file-item \${isSelected ? 'selected' : ''} \${uncommittedClass}" data-file="\${file.path}">
+                <div class="file-item \${isSelected ? 'selected' : ''} \${uncommittedClass} \${contentMatchClass}" data-file="\${file.path}">
                   <span class="file-icon">📄</span>
                   <span class="file-name" title="\${file.path}">\${file.name}</span>
                   <span class="file-badge \${badgeClass}">\${badgeText}</span>
@@ -1560,10 +1989,6 @@ export class SidecarPanelAdapter {
           });
         }
 
-        window.toggleViewMode = function() {
-          vscode.postMessage({ type: 'toggleViewMode' });
-        };
-
         // ===== Comments Rendering =====
         function renderComments(comments) {
           const list = document.getElementById('comments-list');
@@ -1636,6 +2061,7 @@ export class SidecarPanelAdapter {
           if (!diff || !diff.chunks || diff.chunks.length === 0) {
             header.textContent = selectedFile || 'Select a file to review';
             stats.innerHTML = '';
+            diffToolbar.style.display = 'none';
             viewer.innerHTML = \`
               <div class="placeholder">
                 <div class="placeholder-icon">\${selectedFile ? '✓' : '📝'}</div>
@@ -1644,6 +2070,9 @@ export class SidecarPanelAdapter {
             \`;
             return;
           }
+
+          // Show toolbar when diff is available
+          diffToolbar.style.display = 'flex';
 
           header.textContent = diff.file;
 
@@ -1675,14 +2104,12 @@ export class SidecarPanelAdapter {
             \`;
           }
 
-          // Check if all chunks are collapsed
+          // Check if all chunks are collapsed and update button text
           const chunkStates = diff.chunkStates || [];
           const allCollapsed = chunkStates.length > 0 && chunkStates.every(s => s.isCollapsed);
+          diffCollapseAll.textContent = allCollapsed ? 'Expand' : 'Collapse';
 
           let html = \`
-            <div class="chunk-collapse-all">
-              <button class="toggle-btn" onclick="toggleAllChunks()">\${allCollapsed ? 'Expand' : 'Collapse'}</button>
-            </div>
             <table class="diff-table">
               <colgroup>
                 <col class="col-line-num">
@@ -1695,6 +2122,9 @@ export class SidecarPanelAdapter {
           viewer.innerHTML = html;
           setupLineHoverHandlers(diff.file);
           setupChunkToggleHandlers();
+
+          // Re-trigger search if active
+          onFileChange();
         }
 
         // ===== Markdown Rendering =====
@@ -1963,10 +2393,6 @@ export class SidecarPanelAdapter {
             };
           });
         }
-
-        window.toggleAllChunks = function() {
-          vscode.postMessage({ type: 'toggleAllChunks' });
-        };
 
         // ===== Line Selection & Comment Form =====
         function setupLineHoverHandlers(currentFile) {

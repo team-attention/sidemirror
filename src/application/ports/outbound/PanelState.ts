@@ -67,6 +67,7 @@ export interface PanelState {
     aiStatus: AIStatus;
     isTreeView: boolean;
     diffViewMode: DiffViewMode;
+    searchQuery: string;
 }
 
 /**
@@ -83,5 +84,6 @@ export function createInitialPanelState(): PanelState {
         aiStatus: { active: false },
         isTreeView: true,
         diffViewMode: 'preview',
+        searchQuery: '',
     };
 }
