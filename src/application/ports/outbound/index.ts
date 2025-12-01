@@ -6,3 +6,4 @@ export { IGitPort } from './IGitPort';
 export { INotificationPort } from './INotificationPort';
 export { IFileGlobber } from './IFileGlobber';
 export { ISymbolPort, ScopeInfo } from './ISymbolPort';
+export { SessionContext } from './SessionContext';

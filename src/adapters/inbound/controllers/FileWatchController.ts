@@ -2,8 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
-import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
-import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
+import { SessionContext } from '../../../application/ports/outbound/SessionContext';
 import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { DiffDisplayState, ChunkDisplayInfo } from '../../../application/ports/outbound/PanelState';
 import { DiffResult } from '../../../domain/entities/Diff';
@@ -12,9 +11,10 @@ export class FileWatchController {
     private gitignore: Ignore;
     private includePatterns: Ignore;
     private workspaceRoot: string | undefined;
-    private panelStateManager: IPanelStateManager | undefined;
-    private generateDiffUseCase: IGenerateDiffUseCase | undefined;
     private gitPort: IGitPort | undefined;
+
+    /** 모든 활성 세션 참조 */
+    private sessions: Map<string, SessionContext> | undefined;
 
     constructor() {
         this.gitignore = ignore();
@@ -22,12 +22,11 @@ export class FileWatchController {
         this.initialize();
     }
 
-    setPanelStateManager(panelStateManager: IPanelStateManager): void {
-        this.panelStateManager = panelStateManager;
-    }
-
-    setGenerateDiffUseCase(generateDiffUseCase: IGenerateDiffUseCase): void {
-        this.generateDiffUseCase = generateDiffUseCase;
+    /**
+     * 세션 맵 참조 설정 (AIDetectionController에서 호출)
+     */
+    setSessionsRef(sessions: Map<string, SessionContext>): void {
+        this.sessions = sessions;
     }
 
     setGitPort(gitPort: IGitPort): void {
@@ -107,43 +106,21 @@ export class FileWatchController {
 
             if (!this.shouldTrack(uri)) return;
 
-            if (this.panelStateManager) {
-                const relativePath = vscode.workspace.asRelativePath(uri);
-                const fileName = path.basename(relativePath);
-                const currentState = this.panelStateManager.getState();
+            // 활성 세션이 없으면 무시
+            if (!this.sessions || this.sessions.size === 0) return;
 
-                let status: 'added' | 'modified' | 'deleted' = 'modified';
-                if (this.gitPort && this.workspaceRoot) {
-                    status = await this.gitPort.getFileStatus(this.workspaceRoot, relativePath);
-                }
+            const relativePath = vscode.workspace.asRelativePath(uri);
+            const fileName = path.basename(relativePath);
 
-                if (this.panelStateManager.isInBaseline(relativePath)) {
-                    this.panelStateManager.moveToSession(relativePath);
-                } else {
-                    const existsInSession = currentState.sessionFiles.some(
-                        (f) => f.path === relativePath
-                    );
-                    if (!existsInSession) {
-                        this.panelStateManager.addSessionFile({
-                            path: relativePath,
-                            name: fileName,
-                            status,
-                        });
-                    }
-                }
+            // Git 상태 조회 (한 번만)
+            let status: 'added' | 'modified' | 'deleted' = 'modified';
+            if (this.gitPort && this.workspaceRoot) {
+                status = await this.gitPort.getFileStatus(this.workspaceRoot, relativePath);
+            }
 
-                const isFirstFile =
-                    currentState.sessionFiles.length === 0 &&
-                    !this.panelStateManager.isInBaseline(relativePath);
-                const isSelectedFile = currentState.selectedFile === relativePath;
-
-                if (this.generateDiffUseCase && (isFirstFile || isSelectedFile)) {
-                    const diffResult = await this.generateDiffUseCase.execute(relativePath);
-                    if (diffResult) {
-                        const displayState = this.createDiffDisplayState(diffResult);
-                        this.panelStateManager.showDiff(displayState);
-                    }
-                }
+            // 모든 활성 세션에 파일 변경 전파
+            for (const [, sessionContext] of this.sessions) {
+                await this.notifyFileChange(sessionContext, relativePath, fileName, status);
             }
         };
 
@@ -158,6 +135,49 @@ export class FileWatchController {
         context.subscriptions.push(fileWatcher);
         context.subscriptions.push(fileWatcher.onDidChange(handleFileChange));
         context.subscriptions.push(fileWatcher.onDidCreate(handleFileChange));
+    }
+
+    /**
+     * 특정 세션에 파일 변경 알림
+     */
+    private async notifyFileChange(
+        context: SessionContext,
+        relativePath: string,
+        fileName: string,
+        status: 'added' | 'modified' | 'deleted'
+    ): Promise<void> {
+        const { stateManager, generateDiffUseCase } = context;
+        const currentState = stateManager.getState();
+
+        // Baseline에서 Session으로 이동 또는 새 파일 추가
+        if (stateManager.isInBaseline(relativePath)) {
+            stateManager.moveToSession(relativePath);
+        } else {
+            const existsInSession = currentState.sessionFiles.some(
+                (f) => f.path === relativePath
+            );
+            if (!existsInSession) {
+                stateManager.addSessionFile({
+                    path: relativePath,
+                    name: fileName,
+                    status,
+                });
+            }
+        }
+
+        // 첫 파일이거나 현재 선택된 파일이면 Diff 갱신
+        const isFirstFile =
+            currentState.sessionFiles.length === 0 &&
+            !stateManager.isInBaseline(relativePath);
+        const isSelectedFile = currentState.selectedFile === relativePath;
+
+        if (isFirstFile || isSelectedFile) {
+            const diffResult = await generateDiffUseCase.execute(relativePath);
+            if (diffResult) {
+                const displayState = this.createDiffDisplayState(diffResult);
+                stateManager.showDiff(displayState);
+            }
+        }
     }
 
     private createDiffDisplayState(diff: DiffResult): DiffDisplayState {

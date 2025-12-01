@@ -14,9 +14,18 @@ import { DiffResult, DiffChunk } from '../../../domain/entities/Diff';
  * Receives state updates via callback and renders to webview.
  */
 export class SidecarPanelAdapter {
-    public static currentPanel: SidecarPanelAdapter | undefined;
+    /** 활성 패널 추적 (terminalId → adapter) */
+    private static activePanels = new Map<string, SidecarPanelAdapter>();
+
+    /** 싱글톤 호환용 - 마지막 활성 패널 (deprecated, 마이그레이션용) */
+    public static get currentPanel(): SidecarPanelAdapter | undefined {
+        const entries = Array.from(SidecarPanelAdapter.activePanels.values());
+        return entries[entries.length - 1];
+    }
+
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
+    private readonly terminalId: string;
     private disposables: vscode.Disposable[] = [];
     private onDisposeCallback: (() => void) | undefined;
 
@@ -27,15 +36,23 @@ export class SidecarPanelAdapter {
     private panelStateManager: IPanelStateManager | undefined;
     private symbolPort: ISymbolPort | undefined;
 
-    public static create(context: vscode.ExtensionContext): SidecarPanelAdapter {
-        if (SidecarPanelAdapter.currentPanel) {
-            SidecarPanelAdapter.currentPanel.panel.reveal(vscode.ViewColumn.Two);
-            return SidecarPanelAdapter.currentPanel;
+    /**
+     * 새 패널 생성 (터미널별 독립)
+     */
+    public static createNew(
+        context: vscode.ExtensionContext,
+        terminalId: string
+    ): SidecarPanelAdapter {
+        // 이미 이 터미널에 패널이 있으면 반환
+        const existing = SidecarPanelAdapter.activePanels.get(terminalId);
+        if (existing) {
+            existing.show();
+            return existing;
         }
 
         const panel = vscode.window.createWebviewPanel(
             'sidecar',
-            'Sidecar',
+            `Sidecar (${terminalId})`,
             vscode.ViewColumn.Two,
             {
                 enableScripts: true,
@@ -44,13 +61,33 @@ export class SidecarPanelAdapter {
             }
         );
 
-        SidecarPanelAdapter.currentPanel = new SidecarPanelAdapter(panel, context);
-        return SidecarPanelAdapter.currentPanel;
+        const adapter = new SidecarPanelAdapter(panel, context, terminalId);
+        SidecarPanelAdapter.activePanels.set(terminalId, adapter);
+        return adapter;
     }
 
-    private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
+    /**
+     * 기존 create() - deprecated, 호환성 유지용
+     * 새 코드는 createNew() 사용
+     */
+    public static create(context: vscode.ExtensionContext): SidecarPanelAdapter {
+        const defaultTerminalId = 'default';
+        return SidecarPanelAdapter.createNew(context, defaultTerminalId);
+    }
+
+    /** 특정 터미널의 패널 조회 */
+    public static getPanel(terminalId: string): SidecarPanelAdapter | undefined {
+        return SidecarPanelAdapter.activePanels.get(terminalId);
+    }
+
+    private constructor(
+        panel: vscode.WebviewPanel,
+        context: vscode.ExtensionContext,
+        terminalId: string = 'default'
+    ) {
         this.panel = panel;
         this.context = context;
+        this.terminalId = terminalId;
 
         this.initializeWebview();
 
@@ -311,8 +348,12 @@ export class SidecarPanelAdapter {
 
     // ===== Private methods =====
 
+    public getTerminalId(): string {
+        return this.terminalId;
+    }
+
     public dispose(): void {
-        SidecarPanelAdapter.currentPanel = undefined;
+        SidecarPanelAdapter.activePanels.delete(this.terminalId);
         this.onDisposeCallback?.();
         this.panel.dispose();
         while (this.disposables.length) {
@@ -1865,10 +1906,15 @@ export class SidecarPanelAdapter {
         }
 
         function processInline(text) {
-          let result = escapeHtml(text);
+          // Temporarily replace inline code placeholders to protect them from all processing
+          const placeholders = [];
+          let result = text.replace(/\\{\\{INLINE_CODE_(\\d+)\\}\\}/g, (match) => {
+            const index = placeholders.length;
+            placeholders.push(match);
+            return '\\x00PLACEHOLDER' + index + '\\x00';
+          });
 
-          // Restore inline code placeholders temporarily
-          // They will be replaced after processInline
+          result = escapeHtml(result);
 
           // Bold (must come before italic)
           result = result.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');
@@ -1880,6 +1926,11 @@ export class SidecarPanelAdapter {
 
           // Links
           result = result.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank">$1</a>');
+
+          // Restore inline code placeholders AFTER all formatting
+          placeholders.forEach((placeholder, i) => {
+            result = result.replace('\\x00PLACEHOLDER' + i + '\\x00', placeholder);
+          });
 
           return result;
         }

@@ -3,14 +3,8 @@ import * as vscode from 'vscode';
 // Domain
 import { DiffService } from './domain/services/DiffService';
 
-// Application - Use Cases
-import { AddCommentUseCase } from './application/useCases/AddCommentUseCase';
+// Application - Use Cases (only SubmitCommentsUseCase remains shared)
 import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseCase';
-import { GenerateDiffUseCase } from './application/useCases/GenerateDiffUseCase';
-import { CaptureSnapshotsUseCase } from './application/useCases/CaptureSnapshotsUseCase';
-
-// Application - Services
-import { PanelStateManager } from './application/services/PanelStateManager';
 
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
@@ -29,7 +23,6 @@ import {
 
 // Infrastructure - Repositories
 import { JsonCommentRepository } from './infrastructure/repositories/JsonCommentRepository';
-import { InMemorySnapshotRepository } from './infrastructure/repositories/InMemorySnapshotRepository';
 
 let extensionContext: vscode.ExtensionContext;
 
@@ -40,13 +33,9 @@ export function activate(context: vscode.ExtensionContext) {
     // ===== Infrastructure Layer =====
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const commentRepository = new JsonCommentRepository(workspaceRoot);
-    const snapshotRepository = new InMemorySnapshotRepository();
 
     // ===== Domain Layer =====
     const diffService = new DiffService();
-
-    // ===== Application Layer - Services =====
-    const panelStateManager = new PanelStateManager();
 
     // ===== Adapters Layer - Gateways =====
     const terminalGateway = new VscodeTerminalGateway();
@@ -56,24 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
     const fileGlobber = new FastGlobGateway();
     const lspGateway = new VscodeLspGateway();
 
-    // ===== Application Layer - Use Cases =====
-    const captureSnapshotsUseCase = new CaptureSnapshotsUseCase(
-        snapshotRepository,
-        fileSystemGateway,
-        fileGlobber
-    );
-
-    const addCommentUseCase = new AddCommentUseCase(
-        commentRepository
-    );
-
-    const generateDiffUseCase = new GenerateDiffUseCase(
-        snapshotRepository,
-        fileSystemGateway,
-        gitGateway,
-        diffService
-    );
-
+    // ===== Application Layer - Shared Use Cases =====
     const submitCommentsUseCase = new SubmitCommentsUseCase(
         commentRepository,
         terminalGateway,
@@ -82,19 +54,20 @@ export function activate(context: vscode.ExtensionContext) {
 
     // ===== Adapters Layer - Controllers =====
     const aiDetectionController = new AIDetectionController(
-        captureSnapshotsUseCase,
-        snapshotRepository,
+        fileSystemGateway,
+        gitGateway,
+        fileGlobber,
         terminalGateway,
         () => extensionContext,
-        gitGateway,
-        fileGlobber
+        commentRepository,
+        submitCommentsUseCase,
+        diffService,
+        lspGateway
     );
-    aiDetectionController.setPanelStateManager(panelStateManager);
 
     const fileWatchController = new FileWatchController();
-    fileWatchController.setPanelStateManager(panelStateManager);
-    fileWatchController.setGenerateDiffUseCase(generateDiffUseCase);
     fileWatchController.setGitPort(gitGateway);
+    fileWatchController.setSessionsRef(aiDetectionController.getSessions());
 
     // Activate Controllers
     aiDetectionController.activate(context);
@@ -102,52 +75,21 @@ export function activate(context: vscode.ExtensionContext) {
 
     // ===== Commands =====
 
-    // Show Panel
+    // Show Panel (마지막 활성 패널 표시)
     context.subscriptions.push(
         vscode.commands.registerCommand('sidecar.showPanel', () => {
-            const panel = SidecarPanelAdapter.create(context);
-
-            // Connect state manager to panel via render callback
-            panelStateManager.setRenderCallback((state) => panel.render(state));
-
-            // Set up inbound handlers for panel
-            panel.setUseCases(
-                generateDiffUseCase,
-                addCommentUseCase,
-                async () => {
-                    const session = aiDetectionController.getActiveSession();
-                    const result = await submitCommentsUseCase.execute(session);
-                    if (result) {
-                        panelStateManager.markCommentsAsSubmitted(result.submittedIds);
-                    }
-                },
-                panelStateManager,
-                lspGateway
-            );
-
-            // Clean up when panel is disposed
-            panel.onDispose(() => {
-                panelStateManager.clearRenderCallback();
-            });
+            if (SidecarPanelAdapter.currentPanel) {
+                SidecarPanelAdapter.currentPanel.show();
+            }
         })
     );
 
-    // Focus Panel (used by notification actions)
+    // Focus Panel
     context.subscriptions.push(
         vscode.commands.registerCommand('sidecar.focusPanel', () => {
-            if (!SidecarPanelAdapter.currentPanel) {
-                vscode.commands.executeCommand('sidecar.showPanel');
-                return;
+            if (SidecarPanelAdapter.currentPanel) {
+                SidecarPanelAdapter.currentPanel.show();
             }
-            SidecarPanelAdapter.currentPanel.show();
-        })
-    );
-
-
-    // Update AI Type (called from AIDetectionController)
-    context.subscriptions.push(
-        vscode.commands.registerCommand('sidecar.updateAIType', (aiType: string) => {
-            panelStateManager.setAIStatus({ active: true, type: aiType });
         })
     );
 }
