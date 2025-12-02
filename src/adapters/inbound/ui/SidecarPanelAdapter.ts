@@ -181,8 +181,80 @@ export class SidecarPanelAdapter {
         } else {
             const scopes = await this.prefetchScopes(file, diffResult);
             const displayState = this.createDiffDisplayState(diffResult, scopes);
+
+            // For markdown files, fetch full content for preview
+            const isMarkdown = file.endsWith('.md') || file.endsWith('.markdown') || file.endsWith('.mdx');
+            if (isMarkdown) {
+                const fullContent = await this.readFullFileContent(file);
+                if (fullContent !== null) {
+                    displayState.newFileContent = fullContent;
+                    displayState.changedLineNumbers = this.extractChangedLineNumbers(diffResult);
+                    displayState.deletions = this.extractDeletions(diffResult);
+                }
+            }
+
             this.panelStateManager.showDiff(displayState);
         }
+    }
+
+    private async readFullFileContent(relativePath: string): Promise<string | null> {
+        try {
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) return null;
+
+            const absolutePath = path.join(workspaceRoot, relativePath);
+            const uri = vscode.Uri.file(absolutePath);
+            const content = await vscode.workspace.fs.readFile(uri);
+            return Buffer.from(content).toString('utf8');
+        } catch {
+            return null;
+        }
+    }
+
+    private extractChangedLineNumbers(diffResult: DiffResult): number[] {
+        const changedLines: number[] = [];
+        for (const chunk of diffResult.chunks) {
+            for (const line of chunk.lines) {
+                if (line.type === 'addition' && line.newLineNumber) {
+                    changedLines.push(line.newLineNumber);
+                }
+            }
+        }
+        return changedLines;
+    }
+
+    private extractDeletions(diffResult: DiffResult): { afterLine: number; content: string[] }[] {
+        const deletions: { afterLine: number; content: string[] }[] = [];
+
+        for (const chunk of diffResult.chunks) {
+            let currentDeletion: { afterLine: number; content: string[] } | null = null;
+            let lastNewLineNum = chunk.newStart - 1; // Track position in new file
+
+            for (const line of chunk.lines) {
+                if (line.type === 'deletion') {
+                    if (!currentDeletion) {
+                        currentDeletion = { afterLine: lastNewLineNum, content: [] };
+                    }
+                    currentDeletion.content.push(line.content);
+                } else {
+                    // Flush current deletion group
+                    if (currentDeletion) {
+                        deletions.push(currentDeletion);
+                        currentDeletion = null;
+                    }
+                    if (line.newLineNumber) {
+                        lastNewLineNum = line.newLineNumber;
+                    }
+                }
+            }
+
+            // Flush remaining deletion
+            if (currentDeletion) {
+                deletions.push(currentDeletion);
+            }
+        }
+
+        return deletions;
     }
 
     private async prefetchScopes(file: string, diff: DiffResult): Promise<ScopeInfo[]> {
@@ -675,7 +747,7 @@ export class SidecarPanelAdapter {
           color: var(--vscode-foreground);
           overflow: auto;
           height: 100%;
-          max-width: 900px;
+          width: 100%;
         }
 
         .markdown-preview h1 {
@@ -787,6 +859,122 @@ export class SidecarPanelAdapter {
 
         .markdown-preview blockquote p {
           margin: 0;
+        }
+
+        .markdown-preview .diff-addition {
+          background: var(--vscode-diffEditor-insertedLineBackground, rgba(46, 160, 67, 0.15));
+          border-left: 3px solid var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+          padding-left: 8px;
+          margin-left: -11px;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+
+        .markdown-preview .diff-addition:hover {
+          background: var(--vscode-diffEditor-insertedLineBackground, rgba(46, 160, 67, 0.25));
+        }
+
+        .markdown-preview .diff-deletion {
+          background: var(--vscode-diffEditor-removedLineBackground, rgba(248, 81, 73, 0.15));
+          border-left: 3px solid var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+          padding-left: 8px;
+          margin-left: -11px;
+          text-decoration: line-through;
+          opacity: 0.7;
+        }
+
+        .markdown-preview .preview-comment-form {
+          margin: 12px 0;
+          background: var(--vscode-editor-background);
+          border: 1px solid var(--vscode-panel-border);
+          border-radius: 6px;
+          overflow: hidden;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .markdown-preview .preview-comment-form .comment-form-header {
+          padding: 8px 12px;
+          background: var(--vscode-titleBar-activeBackground);
+          border-bottom: 1px solid var(--vscode-panel-border);
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+        }
+
+        .markdown-preview .preview-comment-form textarea {
+          width: 100%;
+          min-height: 80px;
+          padding: 12px;
+          background: var(--vscode-input-background);
+          color: var(--vscode-input-foreground);
+          border: none;
+          resize: vertical;
+          font-family: inherit;
+          font-size: 13px;
+          box-sizing: border-box;
+        }
+
+        .markdown-preview .preview-comment-form textarea:focus {
+          outline: none;
+        }
+
+        .markdown-preview .preview-comment-form .comment-form-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          padding: 8px 12px;
+          background: var(--vscode-titleBar-activeBackground);
+          border-top: 1px solid var(--vscode-panel-border);
+        }
+
+        .markdown-preview .preview-comment-form .comment-form-actions button {
+          width: auto;
+          padding: 6px 12px;
+        }
+
+        .markdown-preview pre.diff-addition,
+        .markdown-preview pre.diff-deletion {
+          margin-left: 0;
+          padding-left: 16px;
+        }
+
+        .markdown-preview-container {
+          position: relative;
+          height: 100%;
+          width: 100%;
+          display: flex;
+        }
+
+        .markdown-preview-container .markdown-preview {
+          flex: 1;
+          overflow: auto;
+        }
+
+        .overview-ruler {
+          position: absolute;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          width: 14px;
+          background: var(--vscode-editorOverviewRuler-background, transparent);
+          border-left: 1px solid var(--vscode-panel-border);
+          pointer-events: none;
+          z-index: 10;
+        }
+
+        .overview-marker {
+          position: absolute;
+          right: 2px;
+          width: 10px;
+          height: 4px;
+          border-radius: 1px;
+        }
+
+        .overview-marker.addition {
+          background: var(--vscode-editorOverviewRuler-addedForeground, #3fb950);
+        }
+
+        .overview-marker.deletion {
+          background: var(--vscode-editorOverviewRuler-deletedForeground, #f85149);
         }
 
         .comment-item {
@@ -1464,6 +1652,8 @@ export class SidecarPanelAdapter {
         let selectedLineElement = null;
         let selectionStartLine = null;
         let selectionEndLine = null;
+        let selectionStartRow = null;
+        let selectionEndRow = null;
         let isSelecting = false;
         let isResizing = false;
         let sidebarWidth = 320;
@@ -2136,6 +2326,7 @@ export class SidecarPanelAdapter {
 
             if (viewMode === 'preview') {
               renderMarkdownPreview(diff, viewer);
+              setupPreviewCommentHandlers(diff.file);
               return;
             }
           } else {
@@ -2366,24 +2557,209 @@ export class SidecarPanelAdapter {
         }
 
         function renderMarkdownPreview(diff, container) {
-          // Extract new content from diff (additions and context lines)
-          let content = '';
+          // If we have full file content, use it with line-based highlighting
+          if (diff.newFileContent) {
+            renderFullMarkdownWithHighlights(diff.newFileContent, diff.changedLineNumbers, container, diff.deletions);
+            return;
+          }
+
+          // Fallback: use diff chunks only (old behavior)
+          const groups = [];
+          let currentGroup = null;
+
           for (const chunk of diff.chunks) {
             for (const line of chunk.lines) {
-              if (line.type === 'addition' || line.type === 'context') {
-                content += line.content + '\\n';
+              if (line.type === 'deletion') continue;
+              const isAddition = line.type === 'addition';
+              if (!currentGroup || currentGroup.isAddition !== isAddition) {
+                if (currentGroup) groups.push(currentGroup);
+                currentGroup = { isAddition, lines: [] };
               }
+              currentGroup.lines.push(line.content);
+            }
+          }
+          if (currentGroup) groups.push(currentGroup);
+
+          let html = '<div class="markdown-preview">';
+          for (const group of groups) {
+            const content = group.lines.join('\\n');
+            const rendered = renderMarkdown(content);
+            if (group.isAddition) {
+              html += '<div class="diff-addition">' + rendered + '</div>';
+            } else {
+              html += rendered;
+            }
+          }
+          html += '</div>';
+          container.innerHTML = html;
+        }
+
+        function renderFullMarkdownWithHighlights(content, changedLineNumbers, container, deletions) {
+          const lines = content.split('\\n');
+          const totalLines = lines.length;
+          const changedSet = new Set(changedLineNumbers || []);
+
+          // Build deletion map: afterLine -> deletion content
+          const deletionMap = new Map();
+          if (deletions) {
+            for (const del of deletions) {
+              deletionMap.set(del.afterLine, del.content);
             }
           }
 
-          // Render markdown
-          const rendered = renderMarkdown(content);
+          // Group consecutive lines by type: 'normal', 'addition', or insert deletions
+          const groups = [];
+          let currentGroup = null;
 
-          container.innerHTML = '<div class="markdown-preview">' + rendered + '</div>';
+          // Check for deletions before first line
+          if (deletionMap.has(0)) {
+            groups.push({ type: 'deletion', lines: deletionMap.get(0), startLine: 0 });
+          }
+
+          for (let i = 0; i < lines.length; i++) {
+            const lineNum = i + 1; // 1-indexed
+            const isChanged = changedSet.has(lineNum);
+            const groupType = isChanged ? 'addition' : 'normal';
+
+            if (!currentGroup || currentGroup.type !== groupType) {
+              if (currentGroup) groups.push(currentGroup);
+              currentGroup = { type: groupType, lines: [], startLine: lineNum };
+            }
+            currentGroup.lines.push(lines[i]);
+
+            // Check for deletions after this line
+            if (deletionMap.has(lineNum)) {
+              if (currentGroup) groups.push(currentGroup);
+              groups.push({ type: 'deletion', lines: deletionMap.get(lineNum), startLine: lineNum });
+              currentGroup = null;
+            }
+          }
+          if (currentGroup) groups.push(currentGroup);
+
+          // Render each group with appropriate highlighting
+          let markdownHtml = '';
+
+          for (const group of groups) {
+            const groupContent = group.lines.join('\\n');
+            const rendered = renderMarkdown(groupContent);
+            const endLine = group.startLine + group.lines.length - 1;
+
+            if (group.type === 'addition') {
+              markdownHtml += '<div class="diff-addition" data-start-line="' + group.startLine + '" data-end-line="' + endLine + '">' + rendered + '</div>';
+            } else if (group.type === 'deletion') {
+              markdownHtml += '<div class="diff-deletion" data-after-line="' + group.startLine + '">' + rendered + '</div>';
+            } else {
+              markdownHtml += rendered;
+            }
+          }
+
+          // Build overview ruler markers
+          let markersHtml = '';
+          const additionLines = changedLineNumbers || [];
+          const deletionPositions = deletions ? deletions.map(d => d.afterLine) : [];
+
+          for (const lineNum of additionLines) {
+            const topPercent = ((lineNum - 1) / totalLines) * 100;
+            markersHtml += '<div class="overview-marker addition" style="top: ' + topPercent.toFixed(2) + '%;"></div>';
+          }
+
+          for (const afterLine of deletionPositions) {
+            const topPercent = (afterLine / totalLines) * 100;
+            markersHtml += '<div class="overview-marker deletion" style="top: ' + topPercent.toFixed(2) + '%;"></div>';
+          }
+
+          // Final HTML with container, markdown preview, and overview ruler
+          container.innerHTML =
+            '<div class="markdown-preview-container">' +
+              '<div class="markdown-preview">' + markdownHtml + '</div>' +
+              '<div class="overview-ruler">' + markersHtml + '</div>' +
+            '</div>';
         }
 
         window.toggleDiffViewMode = function() {
           vscode.postMessage({ type: 'toggleDiffViewMode' });
+        };
+
+        // ===== Preview Comment Handlers =====
+        let previewCurrentFile = null;
+        let previewClickHandler = null;
+
+        function setupPreviewCommentHandlers(file) {
+          previewCurrentFile = file;
+          const preview = document.querySelector('.markdown-preview');
+          if (!preview) return;
+
+          // Remove previous handler if exists
+          if (previewClickHandler) {
+            preview.removeEventListener('click', previewClickHandler);
+          }
+
+          // Create new handler and store reference
+          previewClickHandler = handlePreviewBlockClick;
+          preview.addEventListener('click', previewClickHandler);
+        }
+
+        function handlePreviewBlockClick(e) {
+          // Only allow comments on additions, not deletions
+          const block = e.target.closest('.diff-addition');
+          if (!block) return;
+
+          // Don't open new form if clicking inside existing form
+          if (e.target.closest('.preview-comment-form')) return;
+
+          // Remove any existing form
+          const existingForm = document.querySelector('.preview-comment-form');
+          if (existingForm) existingForm.remove();
+
+          // Get line info
+          const startLine = block.dataset.startLine || block.dataset.afterLine || '1';
+          const endLine = block.dataset.endLine || startLine;
+          const isDeletion = block.classList.contains('diff-deletion');
+
+          const lineDisplay = startLine === endLine
+            ? 'line ' + startLine
+            : 'lines ' + startLine + '-' + endLine;
+          const typeLabel = isDeletion ? ' (deleted)' : '';
+
+          // Create comment form
+          const form = document.createElement('div');
+          form.className = 'preview-comment-form';
+          form.innerHTML = \`
+            <div class="comment-form-header">Comment on \${lineDisplay}\${typeLabel}</div>
+            <textarea placeholder="Leave a comment..."></textarea>
+            <div class="comment-form-actions">
+              <button class="btn-secondary" onclick="closePreviewCommentForm()">Cancel</button>
+              <button onclick="submitPreviewComment(\${startLine}, \${endLine})">Add Comment</button>
+            </div>
+          \`;
+
+          // Insert form inside the block (at the end)
+          block.appendChild(form);
+          form.querySelector('textarea').focus();
+        }
+
+        window.closePreviewCommentForm = function() {
+          const form = document.querySelector('.preview-comment-form');
+          if (form) form.remove();
+        };
+
+        window.submitPreviewComment = function(startLine, endLine) {
+          const form = document.querySelector('.preview-comment-form');
+          if (!form || !previewCurrentFile) return;
+
+          const text = form.querySelector('textarea').value;
+          if (!text.trim()) return;
+
+          vscode.postMessage({
+            type: 'addComment',
+            file: previewCurrentFile,
+            line: startLine,
+            endLine: startLine !== endLine ? endLine : undefined,
+            text: text,
+            context: ''
+          });
+
+          form.remove();
         };
 
         function renderChunksToHtml(chunks, chunkStates) {
@@ -2463,13 +2839,16 @@ export class SidecarPanelAdapter {
           viewer.onmousedown = (e) => {
             const row = e.target.closest('.diff-line');
             if (!row || e.target.closest('.line-comment-btn') || e.target.closest('.inline-comment-form')) return;
+            // Don't allow selection starting from deletion lines
+            if (row.classList.contains('deletion')) return;
             const lineNum = row.dataset.line;
             if (!lineNum) return;
             isSelecting = true;
             selectionStartLine = parseInt(lineNum);
             selectionEndLine = parseInt(lineNum);
+            selectionStartRow = row;
             clearLineSelection();
-            row.classList.add('line-selected');
+            row.classList.add('line-selected', 'selection-start', 'selection-end');
           };
 
           viewer.onmousemove = (e) => {
@@ -2479,6 +2858,7 @@ export class SidecarPanelAdapter {
             const lineNum = row.dataset.line;
             if (!lineNum) return;
             selectionEndLine = parseInt(lineNum);
+            selectionEndRow = row;
             updateLineSelection();
           };
 
@@ -2490,16 +2870,16 @@ export class SidecarPanelAdapter {
               const endLine = Math.max(selectionStartLine, selectionEndLine);
               if (startLine !== endLine || e.target.closest('.diff-line-content')) {
                 selectedLineNum = startLine;
-                const rows = document.querySelectorAll('.diff-line');
-                for (const row of rows) {
-                  if (parseInt(row.dataset.line) === endLine) {
-                    selectedLineElement = row;
-                    break;
-                  }
+                // Find the last selected row (the one with selection-end class)
+                const lastSelectedRow = document.querySelector('.diff-line.selection-end');
+                if (lastSelectedRow) {
+                  selectedLineElement = lastSelectedRow;
                 }
                 showInlineCommentForm(currentFile, startLine, endLine);
               }
             }
+            selectionStartRow = null;
+            selectionEndRow = null;
           };
         }
 
@@ -2514,16 +2894,43 @@ export class SidecarPanelAdapter {
           if (selectionStartLine === null || selectionEndLine === null) return;
           const startLine = Math.min(selectionStartLine, selectionEndLine);
           const endLine = Math.max(selectionStartLine, selectionEndLine);
-          const selectedRows = [];
+
+          // Get types of starting and ending rows
+          const getRowType = (row) => {
+            if (!row) return null;
+            return row.classList.contains('addition') ? 'addition' :
+                   row.classList.contains('deletion') ? 'deletion' : 'context';
+          };
+          const startRowType = getRowType(selectionStartRow);
+          const endRowType = getRowType(selectionEndRow);
+
+          // If start and end types differ, select both types
+          const selectBothTypes = startRowType && endRowType && startRowType !== endRowType;
+
+          // Group rows by line number to detect duplicates
+          const rowsByLineNum = new Map();
           document.querySelectorAll('.diff-line').forEach(row => {
             const lineNum = parseInt(row.dataset.line);
             if (lineNum >= startLine && lineNum <= endLine) {
+              if (!rowsByLineNum.has(lineNum)) {
+                rowsByLineNum.set(lineNum, []);
+              }
+              rowsByLineNum.get(lineNum).push(row);
+            }
+          });
+
+          const selectedRows = [];
+          rowsByLineNum.forEach((rows, lineNum) => {
+            for (const row of rows) {
+              const rowType = getRowType(row);
+              // Skip deletion lines - can't comment on deleted content
+              if (rowType === 'deletion') continue;
               row.classList.add('line-selected');
               selectedRows.push({ row, lineNum });
             }
           });
+
           if (selectedRows.length > 0) {
-            selectedRows.sort((a, b) => a.lineNum - b.lineNum);
             selectedRows[0].row.classList.add('selection-start');
             selectedRows[selectedRows.length - 1].row.classList.add('selection-end');
           }

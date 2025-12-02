@@ -146,10 +146,16 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Diff operations =====
 
     showDiff(diff: DiffDisplayState): void {
+        // Auto-switch to preview mode for markdown files
+        const isMarkdown = diff.file.endsWith('.md') ||
+            diff.file.endsWith('.markdown') ||
+            diff.file.endsWith('.mdx');
+
         this.state = {
             ...this.state,
             diff,
             selectedFile: diff.file,
+            diffViewMode: isMarkdown ? 'preview' : this.state.diffViewMode,
         };
         this.render();
     }

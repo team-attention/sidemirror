@@ -8,11 +8,11 @@ https://github.com/user-attachments/assets/63979c9d-5ed4-4127-a3bc-4c12c8fcf1cf
 
 ## Features
 
-### Automatic AI Detection
+### Automatic AI Detectionssss
 Sidecar monitors your terminal and automatically activates when it detects Claude Code, Codex, or Gemini CLI. The review panel opens alongside your editor without manual intervention.
 
 ### Structured Diff View
-File changes are displayed with collapsible chunks organized by code scope. Each chunk header shows the relevant function, class, or module name using LSP symbol detection, making it easy to understand the context of changes.
+File changes are displayed with collapsible chunks organized by code scope. Each chunk header shows the relevant function, class, or module name using LSP symbol detection, making it easy to understand the context of changessss.
 
 ### File Tree with Status Indicators
 Modified files appear in a hierarchical tree view with visual status badges:

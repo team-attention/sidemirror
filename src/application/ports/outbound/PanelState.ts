@@ -22,6 +22,16 @@ export interface ChunkDisplayInfo {
 }
 
 /**
+ * Deleted content info for markdown preview
+ */
+export interface DeletionInfo {
+    /** Line number after which this deletion occurred (0 = before first line) */
+    afterLine: number;
+    /** Deleted content lines */
+    content: string[];
+}
+
+/**
  * Diff display state (extends DiffResult for UI)
  */
 export interface DiffDisplayState {
@@ -30,6 +40,12 @@ export interface DiffDisplayState {
     stats: { additions: number; deletions: number };
     chunkStates: ChunkDisplayInfo[];
     scopes: ScopeInfo[];
+    /** Full new file content for markdown preview */
+    newFileContent?: string;
+    /** Line numbers that were added/modified (1-indexed) */
+    changedLineNumbers?: number[];
+    /** Deleted content with position info */
+    deletions?: DeletionInfo[];
 }
 
 /**
