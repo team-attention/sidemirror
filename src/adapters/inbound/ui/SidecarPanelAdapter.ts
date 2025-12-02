@@ -898,6 +898,95 @@ export class SidecarPanelAdapter {
           opacity: 0.7;
         }
 
+        /* Table styles */
+        .markdown-preview table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 16px 0;
+          font-size: 14px;
+        }
+
+        .markdown-preview table th,
+        .markdown-preview table td {
+          border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.2));
+          padding: 10px 14px;
+          text-align: left;
+        }
+
+        .markdown-preview table th {
+          background: var(--vscode-editor-selectionBackground, rgba(173, 214, 255, 0.15));
+          font-weight: 600;
+        }
+
+        .markdown-preview table tr:nth-child(even) {
+          background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+        }
+
+        /* Checkbox styles */
+        .markdown-preview .task-list-item {
+          list-style: none;
+          margin-left: -20px;
+        }
+
+        .markdown-preview .task-list-item input[type="checkbox"] {
+          margin-right: 8px;
+          pointer-events: none;
+        }
+
+        /* Syntax highlighting */
+        .markdown-preview pre code .hljs-keyword {
+          color: var(--vscode-debugTokenExpression-name, #c586c0);
+        }
+
+        .markdown-preview pre code .hljs-string {
+          color: var(--vscode-debugTokenExpression-string, #ce9178);
+        }
+
+        .markdown-preview pre code .hljs-number {
+          color: var(--vscode-debugTokenExpression-number, #b5cea8);
+        }
+
+        .markdown-preview pre code .hljs-comment {
+          color: var(--vscode-descriptionForeground, #6a9955);
+          font-style: italic;
+        }
+
+        .markdown-preview pre code .hljs-function {
+          color: var(--vscode-symbolIcon-functionForeground, #dcdcaa);
+        }
+
+        .markdown-preview pre code .hljs-class {
+          color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+        }
+
+        .markdown-preview pre code .hljs-variable {
+          color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
+        }
+
+        .markdown-preview pre code .hljs-operator {
+          color: var(--vscode-foreground, #d4d4d4);
+        }
+
+        .markdown-preview pre code .hljs-punctuation {
+          color: var(--vscode-foreground, #d4d4d4);
+        }
+
+        .markdown-preview pre code .hljs-property {
+          color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+        }
+
+        .markdown-preview pre code .hljs-tag {
+          color: var(--vscode-debugTokenExpression-name, #569cd6);
+        }
+
+        .markdown-preview pre code .hljs-attr {
+          color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+        }
+
+        .markdown-preview pre code .hljs-builtin {
+          color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+        }
+
         .markdown-preview .preview-comment-form {
           margin: 12px 0;
           background: var(--vscode-editor-background);
@@ -2375,13 +2464,149 @@ export class SidecarPanelAdapter {
         }
 
         // ===== Markdown Rendering =====
+        function highlightCode(code, lang) {
+          // Simple syntax highlighting for common languages
+          const keywords = {
+            js: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined'],
+            ts: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined', 'interface', 'type', 'enum', 'implements', 'private', 'public', 'protected', 'readonly', 'as', 'is'],
+            javascript: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined'],
+            typescript: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined', 'interface', 'type', 'enum', 'implements', 'private', 'public', 'protected', 'readonly', 'as', 'is'],
+            python: ['def', 'class', 'return', 'if', 'elif', 'else', 'for', 'while', 'import', 'from', 'as', 'try', 'except', 'raise', 'with', 'lambda', 'yield', 'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is', 'pass', 'break', 'continue', 'global', 'nonlocal', 'async', 'await'],
+            py: ['def', 'class', 'return', 'if', 'elif', 'else', 'for', 'while', 'import', 'from', 'as', 'try', 'except', 'raise', 'with', 'lambda', 'yield', 'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is', 'pass', 'break', 'continue', 'global', 'nonlocal', 'async', 'await'],
+            java: ['class', 'public', 'private', 'protected', 'static', 'final', 'void', 'int', 'String', 'boolean', 'return', 'if', 'else', 'for', 'while', 'new', 'this', 'super', 'extends', 'implements', 'interface', 'try', 'catch', 'throw', 'throws', 'import', 'package', 'true', 'false', 'null'],
+            go: ['func', 'return', 'if', 'else', 'for', 'range', 'var', 'const', 'type', 'struct', 'interface', 'package', 'import', 'defer', 'go', 'chan', 'select', 'case', 'default', 'break', 'continue', 'map', 'make', 'new', 'nil', 'true', 'false'],
+            rust: ['fn', 'let', 'mut', 'const', 'if', 'else', 'for', 'while', 'loop', 'match', 'return', 'struct', 'enum', 'impl', 'trait', 'pub', 'use', 'mod', 'self', 'Self', 'super', 'true', 'false', 'Some', 'None', 'Ok', 'Err', 'async', 'await', 'move', 'ref', 'where'],
+            css: ['@import', '@media', '@keyframes', '@font-face', 'important'],
+            sql: ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'TABLE', 'INDEX', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'AS', 'NULL', 'NOT', 'IN', 'LIKE', 'BETWEEN'],
+            bash: ['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case', 'esac', 'function', 'return', 'exit', 'export', 'local', 'readonly', 'shift', 'true', 'false'],
+            sh: ['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case', 'esac', 'function', 'return', 'exit', 'export', 'local', 'readonly', 'shift', 'true', 'false'],
+            json: [],
+            html: [],
+            xml: [],
+            yaml: ['true', 'false', 'null', 'yes', 'no'],
+            yml: ['true', 'false', 'null', 'yes', 'no'],
+            markdown: [],
+            md: []
+          };
+
+          const builtins = {
+            js: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window'],
+            ts: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window', 'Partial', 'Required', 'Readonly', 'Record', 'Pick', 'Omit', 'Exclude', 'Extract', 'ReturnType'],
+            javascript: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window'],
+            typescript: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window', 'Partial', 'Required', 'Readonly', 'Record', 'Pick', 'Omit', 'Exclude', 'Extract', 'ReturnType'],
+            python: ['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr', 'open', 'input', 'sorted', 'map', 'filter', 'zip', 'enumerate', 'sum', 'min', 'max', 'abs', 'round'],
+            py: ['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr', 'open', 'input', 'sorted', 'map', 'filter', 'zip', 'enumerate', 'sum', 'min', 'max', 'abs', 'round']
+          };
+
+          let escaped = escapeHtml(code);
+          const langKeywords = keywords[lang] || keywords['js'] || [];
+          const langBuiltins = builtins[lang] || [];
+
+          // Highlight comments (must be first to avoid conflicts)
+          // Single-line comments
+          escaped = escaped.replace(/(\\/{2}.*)$/gm, '<span class="hljs-comment">$1</span>');
+          // Python/bash comments
+          if (['python', 'py', 'bash', 'sh', 'yaml', 'yml'].includes(lang)) {
+            escaped = escaped.replace(/(#.*)$/gm, '<span class="hljs-comment">$1</span>');
+          }
+          // Multi-line comments
+          escaped = escaped.replace(/(\\/\\*[\\s\\S]*?\\*\\/)/g, '<span class="hljs-comment">$1</span>');
+          // HTML comments
+          escaped = escaped.replace(/(&lt;!--[\\s\\S]*?--&gt;)/g, '<span class="hljs-comment">$1</span>');
+
+          // Highlight strings (double quotes, single quotes, template literals)
+          escaped = escaped.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g, '<span class="hljs-string">$1</span>');
+          escaped = escaped.replace(/(&#39;(?:[^&]|&(?!#39;))*?&#39;)/g, '<span class="hljs-string">$1</span>');
+          escaped = escaped.replace(/(\`[^\`]*\`)/g, '<span class="hljs-string">$1</span>');
+
+          // Highlight numbers
+          escaped = escaped.replace(/\\b(\\d+\\.?\\d*)\\b/g, '<span class="hljs-number">$1</span>');
+
+          // Highlight keywords (word boundaries to avoid partial matches)
+          for (const kw of langKeywords) {
+            const regex = new RegExp('\\\\b(' + kw + ')\\\\b', 'g');
+            escaped = escaped.replace(regex, '<span class="hljs-keyword">$1</span>');
+          }
+
+          // Highlight builtins
+          for (const bi of langBuiltins) {
+            const regex = new RegExp('\\\\b(' + bi + ')\\\\b', 'g');
+            escaped = escaped.replace(regex, '<span class="hljs-builtin">$1</span>');
+          }
+
+          // Highlight function calls (word followed by parenthesis)
+          escaped = escaped.replace(/\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(/g, '<span class="hljs-function">$1</span>(');
+
+          // Highlight HTML/XML tags
+          if (['html', 'xml', 'jsx', 'tsx'].includes(lang)) {
+            escaped = escaped.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9]*)/g, '$1<span class="hljs-tag">$2</span>');
+            escaped = escaped.replace(/\\s([a-zA-Z-]+)=/g, ' <span class="hljs-attr">$1</span>=');
+          }
+
+          return escaped;
+        }
+
+        function renderTable(rows) {
+          if (rows.length === 0) return '';
+
+          // Parse cells from each row
+          const parseRow = (row) => {
+            return row.slice(1, -1).split('|').map(cell => cell.trim());
+          };
+
+          // Check if second row is separator (alignment row)
+          const hasSeparator = rows.length > 1 && rows[1].match(/^\\|[\\s:-]+\\|$/);
+          const headerRow = parseRow(rows[0]);
+          let alignments = [];
+
+          let dataStartIndex = 1;
+          if (hasSeparator) {
+            const separatorCells = parseRow(rows[1]);
+            alignments = separatorCells.map(cell => {
+              if (cell.startsWith(':') && cell.endsWith(':')) return 'center';
+              if (cell.endsWith(':')) return 'right';
+              return 'left';
+            });
+            dataStartIndex = 2;
+          }
+
+          let tableHtml = '<table>';
+
+          // Header
+          tableHtml += '<thead><tr>';
+          headerRow.forEach((cell, i) => {
+            const align = alignments[i] ? ' style="text-align: ' + alignments[i] + '"' : '';
+            tableHtml += '<th' + align + '>' + processInline(cell) + '</th>';
+          });
+          tableHtml += '</tr></thead>';
+
+          // Body
+          if (rows.length > dataStartIndex) {
+            tableHtml += '<tbody>';
+            for (let i = dataStartIndex; i < rows.length; i++) {
+              const cells = parseRow(rows[i]);
+              tableHtml += '<tr>';
+              cells.forEach((cell, j) => {
+                const align = alignments[j] ? ' style="text-align: ' + alignments[j] + '"' : '';
+                tableHtml += '<td' + align + '>' + processInline(cell) + '</td>';
+              });
+              tableHtml += '</tr>';
+            }
+            tableHtml += '</tbody>';
+          }
+
+          tableHtml += '</table>';
+          return tableHtml;
+        }
+
         function renderMarkdown(text) {
           // Store code blocks first to protect them from processing
           const codeBlocks = [];
           // Match fenced code blocks with optional language
           let html = text.replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, (match, lang, code) => {
             const index = codeBlocks.length;
-            codeBlocks.push('<pre><code class="language-' + (lang || '') + '">' + escapeHtml(code.trim()) + '</code></pre>');
+            const highlighted = highlightCode(code.trim(), lang);
+            codeBlocks.push('<pre><code class="language-' + (lang || '') + '">' + highlighted + '</code></pre>');
             return '\\n{{CODE_BLOCK_' + index + '}}\\n';
           });
 
@@ -2398,6 +2623,8 @@ export class SidecarPanelAdapter {
           const processedLines = [];
           let inList = false;
           let listType = null;
+          let inTable = false;
+          let tableRows = [];
 
           for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
@@ -2409,8 +2636,30 @@ export class SidecarPanelAdapter {
                 inList = false;
                 listType = null;
               }
+              if (inTable) {
+                processedLines.push(renderTable(tableRows));
+                tableRows = [];
+                inTable = false;
+              }
               processedLines.push(line.trim());
               continue;
+            }
+
+            // Table row detection
+            if (line.trim().match(/^\\|.*\\|$/)) {
+              if (inList) {
+                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                inList = false;
+                listType = null;
+              }
+              inTable = true;
+              tableRows.push(line.trim());
+              continue;
+            } else if (inTable) {
+              // End of table
+              processedLines.push(renderTable(tableRows));
+              tableRows = [];
+              inTable = false;
             }
 
             // Horizontal rule
@@ -2449,16 +2698,25 @@ export class SidecarPanelAdapter {
               continue;
             }
 
-            // Unordered list
+            // Unordered list (including task lists with checkboxes)
             if (line.match(/^\\s*[-*+]\\s+/)) {
-              const content = line.replace(/^\\s*[-*+]\\s+/, '');
+              let content = line.replace(/^\\s*[-*+]\\s+/, '');
               if (!inList || listType !== 'ul') {
                 if (inList) processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
                 processedLines.push('<ul>');
                 inList = true;
                 listType = 'ul';
               }
-              processedLines.push('<li>' + processInline(content) + '</li>');
+              // Check for task list item (checkbox)
+              const checkboxMatch = content.match(/^\\[([xX\\s])\\]\\s+(.*)$/);
+              if (checkboxMatch) {
+                const isChecked = checkboxMatch[1].toLowerCase() === 'x';
+                const taskContent = checkboxMatch[2];
+                const checkbox = '<input type="checkbox"' + (isChecked ? ' checked' : '') + ' disabled>';
+                processedLines.push('<li class="task-list-item">' + checkbox + processInline(taskContent) + '</li>');
+              } else {
+                processedLines.push('<li>' + processInline(content) + '</li>');
+              }
               continue;
             }
 
@@ -2500,6 +2758,11 @@ export class SidecarPanelAdapter {
             processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
           }
 
+          // Close any open table
+          if (inTable && tableRows.length > 0) {
+            processedLines.push(renderTable(tableRows));
+          }
+
           // Join and wrap in paragraphs
           html = processedLines.join('\\n');
 
@@ -2512,7 +2775,7 @@ export class SidecarPanelAdapter {
           });
 
           // Wrap loose text in paragraphs (text not in block elements)
-          const blockTags = ['<h1', '<h2', '<h3', '<h4', '<h5', '<h6', '<ul', '<ol', '<li', '<pre', '<hr', '<blockquote', '</ul', '</ol', '</li', '</blockquote'];
+          const blockTags = ['<h1', '<h2', '<h3', '<h4', '<h5', '<h6', '<ul', '<ol', '<li', '<pre', '<hr', '<blockquote', '</ul', '</ol', '</li', '</blockquote', '<table', '</table'];
           const finalLines = html.split('\\n');
           let result = '';
           let paragraphBuffer = [];

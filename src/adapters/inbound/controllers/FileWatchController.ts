@@ -174,23 +174,92 @@ export class FileWatchController {
         if (isFirstFile || isSelectedFile) {
             const diffResult = await generateDiffUseCase.execute(relativePath);
             if (diffResult) {
-                const displayState = this.createDiffDisplayState(diffResult);
+                const displayState = await this.createDiffDisplayState(diffResult, relativePath);
                 stateManager.showDiff(displayState);
             }
         }
     }
 
-    private createDiffDisplayState(diff: DiffResult): DiffDisplayState {
+    private async createDiffDisplayState(diff: DiffResult, filePath: string): Promise<DiffDisplayState> {
         const chunkStates: ChunkDisplayInfo[] = diff.chunks.map((chunk, index) => ({
             index,
             isCollapsed: false,
             scopeLabel: null,
         }));
 
-        return {
+        const displayState: DiffDisplayState = {
             ...diff,
             chunkStates,
             scopes: [],
         };
+
+        // For markdown files, add full content and change info for preview
+        const isMarkdown = filePath.endsWith('.md') || filePath.endsWith('.markdown') || filePath.endsWith('.mdx');
+        if (isMarkdown && this.workspaceRoot) {
+            const fullContent = await this.readFullFileContent(filePath);
+            if (fullContent !== null) {
+                displayState.newFileContent = fullContent;
+                displayState.changedLineNumbers = this.extractChangedLineNumbers(diff);
+                displayState.deletions = this.extractDeletions(diff);
+            }
+        }
+
+        return displayState;
+    }
+
+    private async readFullFileContent(relativePath: string): Promise<string | null> {
+        if (!this.workspaceRoot) return null;
+        try {
+            const absolutePath = path.join(this.workspaceRoot, relativePath);
+            const uri = vscode.Uri.file(absolutePath);
+            const content = await vscode.workspace.fs.readFile(uri);
+            return Buffer.from(content).toString('utf8');
+        } catch {
+            return null;
+        }
+    }
+
+    private extractChangedLineNumbers(diff: DiffResult): number[] {
+        const changedLines: number[] = [];
+        for (const chunk of diff.chunks) {
+            for (const line of chunk.lines) {
+                if (line.type === 'addition' && line.newLineNumber) {
+                    changedLines.push(line.newLineNumber);
+                }
+            }
+        }
+        return changedLines;
+    }
+
+    private extractDeletions(diff: DiffResult): { afterLine: number; content: string[] }[] {
+        const deletions: { afterLine: number; content: string[] }[] = [];
+
+        for (const chunk of diff.chunks) {
+            let currentDeletion: { afterLine: number; content: string[] } | null = null;
+            let lastNewLineNum = chunk.newStart - 1;
+
+            for (const line of chunk.lines) {
+                if (line.type === 'deletion') {
+                    if (!currentDeletion) {
+                        currentDeletion = { afterLine: lastNewLineNum, content: [] };
+                    }
+                    currentDeletion.content.push(line.content);
+                } else {
+                    if (currentDeletion) {
+                        deletions.push(currentDeletion);
+                        currentDeletion = null;
+                    }
+                    if (line.newLineNumber) {
+                        lastNewLineNum = line.newLineNumber;
+                    }
+                }
+            }
+
+            if (currentDeletion) {
+                deletions.push(currentDeletion);
+            }
+        }
+
+        return deletions;
     }
 }
