@@ -747,28 +747,28 @@ function highlightCode(code, lang) {
 
   for (const kw of langKeywords) {
     const regex = new RegExp('\\\\b(' + kw + ')\\\\b', 'g');
-    escaped = escaped.replace(regex, '<span class="hljs-keyword">$1</span>');
+    escaped = escaped.replace(regex, (_, m) => savePlaceholder('<span class="hljs-keyword">' + m + '</span>'));
   }
 
   for (const bi of langBuiltins) {
     const regex = new RegExp('\\\\b(' + bi + ')\\\\b', 'g');
-    escaped = escaped.replace(regex, '<span class="hljs-builtin">$1</span>');
+    escaped = escaped.replace(regex, (_, m) => savePlaceholder('<span class="hljs-builtin">' + m + '</span>'));
   }
 
   for (const tp of langTypes) {
     const regex = new RegExp('\\\\b(' + tp + ')\\\\b', 'g');
-    escaped = escaped.replace(regex, '<span class="hljs-type">$1</span>');
+    escaped = escaped.replace(regex, (_, m) => savePlaceholder('<span class="hljs-type">' + m + '</span>'));
   }
 
-  escaped = escaped.replace(/\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(/g, '<span class="hljs-function">$1</span>(');
+  escaped = escaped.replace(/\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(/g, (m, name) => savePlaceholder('<span class="hljs-function">' + name + '</span>') + '(');
 
   if (['ts', 'typescript'].includes(lang)) {
-    escaped = escaped.replace(/([a-zA-Z_][a-zA-Z0-9_]*)(\\??\\s*):/g, '<span class="hljs-property">$1</span>$2:');
+    escaped = escaped.replace(/([a-zA-Z_][a-zA-Z0-9_]*)(\\??\\s*):/g, (m, name, suffix) => savePlaceholder('<span class="hljs-property">' + name + '</span>') + suffix + ':');
   }
 
   if (['html', 'xml', 'jsx', 'tsx'].includes(lang)) {
-    escaped = escaped.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9]*)/g, '$1<span class="hljs-tag">$2</span>');
-    escaped = escaped.replace(/\\s([a-zA-Z-]+)=/g, ' <span class="hljs-attr">$1</span>=');
+    escaped = escaped.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9]*)/g, (m, prefix, tag) => prefix + savePlaceholder('<span class="hljs-tag">' + tag + '</span>'));
+    escaped = escaped.replace(/\\s([a-zA-Z-]+)=/g, (m, attr) => ' ' + savePlaceholder('<span class="hljs-attr">' + attr + '</span>') + '=');
   }
 
   placeholders.forEach((val, idx) => {
