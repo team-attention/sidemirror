@@ -743,7 +743,7 @@ function highlightCode(code, lang) {
   escaped = escaped.replace(/('(?:[^'\\\\]|\\\\.)*')/g, (m) => savePlaceholder('<span class="hljs-string">' + m + '</span>'));
   escaped = escaped.replace(/(\`(?:[^\`\\\\]|\\\\.)*\`)/g, (m) => savePlaceholder('<span class="hljs-string">' + m + '</span>'));
 
-  escaped = escaped.replace(/\\b(\\d+\\.?\\d*)\\b/g, '<span class="hljs-number">$1</span>');
+  escaped = escaped.replace(/\\b(\\d+\\.?\\d*)\\b/g, (m) => savePlaceholder('<span class="hljs-number">' + m + '</span>'));
 
   for (const kw of langKeywords) {
     const regex = new RegExp('\\\\b(' + kw + ')\\\\b', 'g');
