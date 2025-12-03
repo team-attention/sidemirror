@@ -2,7 +2,7 @@
   "name": "sidecar",
   "displayName": "Sidecar",
   "description": "Real-time code review interface for AI coding assistants",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
