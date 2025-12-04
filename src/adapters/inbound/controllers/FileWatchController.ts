@@ -12,6 +12,7 @@ export class FileWatchController {
     private includePatterns: Ignore;
     private workspaceRoot: string | undefined;
     private gitPort: IGitPort | undefined;
+    private debugChannel: vscode.OutputChannel | undefined;
 
     /** 모든 활성 세션 참조 */
     private sessions: Map<string, SessionContext> | undefined;
@@ -20,6 +21,12 @@ export class FileWatchController {
         this.gitignore = ignore();
         this.includePatterns = ignore();
         this.initialize();
+    }
+
+    private log(message: string): void {
+        if (!this.debugChannel) return;
+        const timestamp = new Date().toISOString().substring(11, 23);
+        this.debugChannel.appendLine(`[${timestamp}] ${message}`);
     }
 
     /**
@@ -92,25 +99,39 @@ export class FileWatchController {
     }
 
     activate(context: vscode.ExtensionContext): void {
+        this.debugChannel = vscode.window.createOutputChannel('Sidecar FileWatch');
+        context.subscriptions.push(this.debugChannel);
+
         const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
         const handleFileChange = async (uri: vscode.Uri) => {
+            const relativePath = vscode.workspace.asRelativePath(uri);
+            this.log(`Event: ${relativePath}`);
+
             try {
                 const stat = await vscode.workspace.fs.stat(uri);
                 if (stat.type === vscode.FileType.Directory) {
+                    this.log(`  Skip: directory`);
                     return;
                 }
             } catch {
+                this.log(`  Skip: stat failed`);
                 return;
             }
 
-            if (!this.shouldTrack(uri)) return;
+            if (!this.shouldTrack(uri)) {
+                this.log(`  Skip: shouldTrack=false`);
+                return;
+            }
 
             // 활성 세션이 없으면 무시
-            if (!this.sessions || this.sessions.size === 0) return;
+            if (!this.sessions || this.sessions.size === 0) {
+                this.log(`  Skip: no sessions (size=${this.sessions?.size ?? 'undefined'})`);
+                return;
+            }
 
-            const relativePath = vscode.workspace.asRelativePath(uri);
             const fileName = path.basename(relativePath);
+            this.log(`  Processing: ${relativePath} (sessions=${this.sessions.size})`);
 
             // Git 상태 조회 (한 번만)
             let status: 'added' | 'modified' | 'deleted' = 'modified';
