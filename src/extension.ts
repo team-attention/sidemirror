@@ -27,7 +27,7 @@ import { JsonCommentRepository } from './infrastructure/repositories/JsonComment
 let extensionContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Sidecar is now active!');
+    console.log('[Sidecar] Sidecar is now active!');
     extensionContext = context;
 
     // ===== Infrastructure Layer =====

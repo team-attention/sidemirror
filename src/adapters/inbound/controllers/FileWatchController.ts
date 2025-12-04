@@ -28,7 +28,7 @@ export class FileWatchController {
     private log(message: string): void {
         if (!this.debugChannel) return;
         const timestamp = new Date().toISOString().substring(11, 23);
-        this.debugChannel.appendLine(`[${timestamp}] ${message}`);
+        this.debugChannel.appendLine(`[Sidecar] [${timestamp}] ${message}`);
     }
 
     /**
@@ -89,11 +89,16 @@ export class FileWatchController {
 
         const relativePath = vscode.workspace.asRelativePath(uri);
 
-        if (this.includePatterns.ignores(relativePath)) {
+        const inWhitelist = this.includePatterns.ignores(relativePath);
+        const inGitignore = this.gitignore.ignores(relativePath);
+
+        this.log(`  shouldTrack: ${relativePath} (whitelist=${inWhitelist}, gitignore=${inGitignore})`);
+
+        if (inWhitelist) {
             return true;
         }
 
-        if (this.gitignore.ignores(relativePath)) {
+        if (inGitignore) {
             return false;
         }
 

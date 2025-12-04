@@ -69,34 +69,38 @@ export class AIDetectionController {
             }
 
             if (this.isClaudeCommand(commandLine)) {
-                console.log('Claude Code detected!');
+                console.log('[Sidecar] Claude Code detected!');
                 await this.activateSidecar('claude', terminal);
             } else if (this.isCodexCommand(commandLine)) {
-                console.log('Codex detected!');
+                console.log('[Sidecar] Codex detected!');
                 await this.activateSidecar('codex', terminal);
             } else if (this.isGeminiCommand(commandLine)) {
-                console.log('Gemini CLI detected!');
+                console.log('[Sidecar] Gemini CLI detected!');
                 await this.activateSidecar('gemini', terminal);
             }
         } catch (error) {
-            console.error('Error in handleCommandStart:', error);
+            console.error('[Sidecar] Error in handleCommandStart:', error);
         }
     }
 
     private isClaudeCommand(commandLine: string): boolean {
-        return /\bclaude(-code)?\b/.test(commandLine);
+        // 명령어가 claude 또는 claude-code로 시작하는 경우만 감지
+        // npx claude, bunx claude 등도 지원
+        return /^(npx\s+|bunx\s+|pnpx\s+)?claude(-code)?(\s|$)/.test(commandLine.trim());
     }
 
     private isCodexCommand(commandLine: string): boolean {
-        return /\bcodex\b/.test(commandLine);
+        // 명령어가 codex로 시작하는 경우만 감지
+        return /^(npx\s+|bunx\s+|pnpx\s+)?codex(\s|$)/.test(commandLine.trim());
     }
 
     private isGeminiCommand(commandLine: string): boolean {
-        const normalized = commandLine.toLowerCase();
+        const normalized = commandLine.trim().toLowerCase();
+        // 명령어가 gemini로 시작하거나 gcloud ai gemini 명령인 경우만 감지
         return (
-            /\bgemini\b/.test(normalized) ||
-            /@google\/generative-ai-cli/.test(normalized) ||
-            /\bgcloud\s+ai\s+gemini\b/.test(normalized)
+            /^(npx\s+|bunx\s+|pnpx\s+)?gemini(\s|$)/.test(normalized) ||
+            /^npx\s+@google\/generative-ai-cli(\s|$)/.test(normalized) ||
+            /^gcloud\s+ai\s+gemini(\s|$)/.test(normalized)
         );
     }
 
@@ -144,7 +148,7 @@ export class AIDetectionController {
             const includePatterns = config.get<string[]>('includeFiles', []);
             await captureSnapshotsUseCase.execute(includePatterns);
         } catch (error) {
-            console.error('Failed to capture snapshots:', error);
+            console.error('[Sidecar] Failed to capture snapshots:', error);
         }
 
         // Baseline 캡처
@@ -219,7 +223,7 @@ export class AIDetectionController {
         const context = this.sessions.get(terminalId);
         if (!context) return;
 
-        console.log(`Flushing session: ${context.session.type} (${terminalId})`);
+        console.log(`[Sidecar] Flushing session: ${context.session.type} (${terminalId})`);
 
         // 리소스 정리
         context.snapshotRepository.clear();
@@ -232,7 +236,7 @@ export class AIDetectionController {
         // 세션 제거
         this.sessions.delete(terminalId);
 
-        console.log('Session flushed, panel closed');
+        console.log('[Sidecar] Session flushed, panel closed');
     }
 
     /** 터미널 → ID 매핑 (터미널 객체 기반) */
@@ -275,7 +279,7 @@ export class AIDetectionController {
         try {
             await vscode.commands.executeCommand('workbench.action.terminal.moveIntoEditor');
         } catch {
-            console.log('Terminal move command not available');
+            console.log('[Sidecar] Terminal move command not available');
         }
     }
 
@@ -294,7 +298,7 @@ export class AIDetectionController {
 
             stateManager.setBaseline(baselineFiles);
         } catch (error) {
-            console.error('Failed to capture baseline:', error);
+            console.error('[Sidecar] Failed to capture baseline:', error);
         }
     }
 
@@ -308,7 +312,7 @@ export class AIDetectionController {
 
         // AI 명령 종료 시에만 세션 플러시
         if (this.isAICommand(commandLine)) {
-            console.log(`AI command ended: ${context.session.type} (${terminalId})`);
+            console.log(`[Sidecar] AI command ended: ${context.session.type} (${terminalId})`);
             context.disposePanel();  // Panel dispose → flushSession 트리거
         }
     }
@@ -318,7 +322,7 @@ export class AIDetectionController {
         const context = this.sessions.get(terminalId);
 
         if (context) {
-            console.log(`Terminal closed: ${context.session.type} (${terminalId})`);
+            console.log(`[Sidecar] Terminal closed: ${context.session.type} (${terminalId})`);
             context.disposePanel();
         }
     }
