@@ -62,9 +62,9 @@ export class FileWatchController {
             this.gitignore.add(content);
         }
 
+        // 항상 제외할 패턴
         this.gitignore.add([
             '.git',
-            'node_modules',
             'sidecar-comments.json'
         ]);
     }
@@ -315,7 +315,7 @@ export class FileWatchController {
     }
 
     private async createDiffDisplayState(diff: DiffResult, filePath: string): Promise<DiffDisplayState> {
-        const chunkStates: ChunkDisplayInfo[] = diff.chunks.map((chunk, index) => ({
+        const chunkStates: ChunkDisplayInfo[] = diff.chunks.map((_, index) => ({
             index,
             isCollapsed: false,
             scopeLabel: null,

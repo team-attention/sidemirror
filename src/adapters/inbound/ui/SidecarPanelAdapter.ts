@@ -139,6 +139,9 @@ export class SidecarPanelAdapter {
                     case 'setSearchQuery':
                         this.panelStateManager?.setSearchQuery(message.query);
                         break;
+                    case 'openFile':
+                        await this.handleOpenFile(message.file);
+                        break;
                 }
             },
             null,
@@ -403,6 +406,23 @@ export class SidecarPanelAdapter {
     private async handleSubmitComments(): Promise<void> {
         if (!this.onSubmitComments) return;
         await this.onSubmitComments();
+    }
+
+    private async handleOpenFile(file: string): Promise<void> {
+        if (!file) return;
+
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceRoot) return;
+
+        const absolutePath = path.join(workspaceRoot, file);
+        const uri = vscode.Uri.file(absolutePath);
+
+        try {
+            const document = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
+        } catch (error) {
+            console.error('[Sidecar] Failed to open file:', error);
+        }
     }
 
     // ===== Render method =====

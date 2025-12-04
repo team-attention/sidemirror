@@ -630,6 +630,10 @@ function renderDiff(diff, selectedFile, viewMode) {
   diffToolbar.style.display = 'flex';
 
   header.textContent = diff.file;
+  header.style.cursor = 'pointer';
+  header.onclick = () => {
+    vscode.postMessage({ type: 'openFile', file: diff.file });
+  };
 
   const isMarkdown = selectedFile && (
     selectedFile.endsWith('.md') ||
@@ -1356,6 +1360,7 @@ window.submitPreviewComment = function(startLine, endLine) {
 
   form.remove();
   clearPreviewSelection();
+  expandSidebar();
 };
 
 function renderChunksToHtml(chunks, chunkStates) {
@@ -1593,6 +1598,7 @@ window.submitInlineComment = function() {
     formRow.remove();
     selectionStartLine = null;
     selectionEndLine = null;
+    expandSidebar();
   }
 };
 
