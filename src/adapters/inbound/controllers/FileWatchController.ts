@@ -4,7 +4,7 @@ import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
 import { SessionContext } from '../../../application/ports/outbound/SessionContext';
 import { IGitPort } from '../../../application/ports/outbound/IGitPort';
-import { DiffDisplayState, ChunkDisplayInfo } from '../../../application/ports/outbound/PanelState';
+import { DiffDisplayState, ChunkDisplayInfo, FileInfo } from '../../../application/ports/outbound/PanelState';
 import { DiffResult } from '../../../domain/entities/Diff';
 
 export class FileWatchController {
@@ -13,6 +13,8 @@ export class FileWatchController {
     private workspaceRoot: string | undefined;
     private gitPort: IGitPort | undefined;
     private debugChannel: vscode.OutputChannel | undefined;
+    private gitHeadWatcher: vscode.FileSystemWatcher | undefined;
+    private lastHeadCommit: string | undefined;
 
     /** 모든 활성 세션 참조 */
     private sessions: Map<string, SessionContext> | undefined;
@@ -156,6 +158,112 @@ export class FileWatchController {
         context.subscriptions.push(fileWatcher);
         context.subscriptions.push(fileWatcher.onDidChange(handleFileChange));
         context.subscriptions.push(fileWatcher.onDidCreate(handleFileChange));
+
+        // Watch for git commits by monitoring .git/HEAD changes
+        this.setupGitCommitWatcher(context);
+    }
+
+    /**
+     * Setup watcher for git commits
+     * Monitors .git/HEAD and .git/refs to detect commits
+     */
+    private setupGitCommitWatcher(context: vscode.ExtensionContext): void {
+        if (!this.workspaceRoot) return;
+
+        // Initialize last commit hash
+        this.updateLastHeadCommit();
+
+        // Watch .git/HEAD and refs for commit changes
+        const gitPattern = new vscode.RelativePattern(
+            this.workspaceRoot,
+            '.git/{HEAD,refs/**,index}'
+        );
+        this.gitHeadWatcher = vscode.workspace.createFileSystemWatcher(gitPattern);
+
+        const handleGitChange = async () => {
+            const currentCommit = await this.getCurrentHeadCommit();
+            if (currentCommit && currentCommit !== this.lastHeadCommit) {
+                this.log(`Git commit detected: ${this.lastHeadCommit?.slice(0, 7)} -> ${currentCommit.slice(0, 7)}`);
+                this.lastHeadCommit = currentCommit;
+                await this.handleCommit();
+            }
+        };
+
+        context.subscriptions.push(this.gitHeadWatcher);
+        context.subscriptions.push(this.gitHeadWatcher.onDidChange(handleGitChange));
+        context.subscriptions.push(this.gitHeadWatcher.onDidCreate(handleGitChange));
+    }
+
+    private async updateLastHeadCommit(): Promise<void> {
+        this.lastHeadCommit = await this.getCurrentHeadCommit();
+    }
+
+    private getCurrentHeadCommit(): Promise<string | undefined> {
+        if (!this.workspaceRoot) return Promise.resolve(undefined);
+
+        return new Promise((resolve) => {
+            const { exec } = require('child_process');
+            exec(
+                `cd "${this.workspaceRoot}" && git rev-parse HEAD`,
+                { maxBuffer: 1024 },
+                (error: Error | null, stdout: string) => {
+                    if (error) {
+                        resolve(undefined);
+                    } else {
+                        resolve(stdout.trim());
+                    }
+                }
+            );
+        });
+    }
+
+    /**
+     * Handle git commit - refresh session files
+     * Remove files that are no longer changed after commit
+     */
+    private async handleCommit(): Promise<void> {
+        if (!this.sessions || this.sessions.size === 0) {
+            this.log('  Skip commit handling: no active sessions');
+            return;
+        }
+
+        if (!this.gitPort || !this.workspaceRoot) {
+            this.log('  Skip commit handling: no gitPort or workspaceRoot');
+            return;
+        }
+
+        this.log('Refreshing session files after commit...');
+
+        // Get current uncommitted files from git
+        const uncommittedFiles = await this.gitPort.getUncommittedFilesWithStatus(this.workspaceRoot);
+        const uncommittedPaths = new Set(uncommittedFiles.map(f => f.path));
+
+        // Update each session
+        for (const [terminalId, sessionContext] of this.sessions) {
+            const { stateManager } = sessionContext;
+            const currentState = stateManager.getState();
+
+            // Find files that were committed (no longer in uncommitted list)
+            const committedFiles = currentState.sessionFiles.filter(
+                f => !uncommittedPaths.has(f.path)
+            );
+
+            // Remove committed files from session
+            for (const file of committedFiles) {
+                this.log(`  Removing committed file: ${file.path}`);
+                stateManager.removeSessionFile(file.path);
+            }
+
+            // Update baseline with current uncommitted files
+            const baselineFiles: FileInfo[] = uncommittedFiles.map(f => ({
+                path: f.path,
+                name: path.basename(f.path),
+                status: f.status,
+            }));
+            stateManager.setBaseline(baselineFiles);
+
+            this.log(`  Session ${terminalId}: removed ${committedFiles.length} committed files`);
+        }
     }
 
     /**
