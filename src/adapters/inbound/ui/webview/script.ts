@@ -886,7 +886,7 @@ function renderAIStatus(aiStatus) {
 }
 
 // ===== Diff Rendering =====
-function renderDiff(diff, selectedFile, viewMode, comments = []) {
+async function renderDiff(diff, selectedFile, viewMode, comments = []) {
   const header = document.querySelector('.diff-header-title');
   const stats = document.getElementById('diff-stats');
   const viewer = document.getElementById('diff-viewer');
@@ -930,7 +930,7 @@ function renderDiff(diff, selectedFile, viewMode, comments = []) {
     if (viewMode === 'preview') {
       // Filter comments for current file
       const fileComments = (comments || []).filter(c => c.file === diff.file);
-      renderMarkdownPreview(diff, viewer, fileComments);
+      await renderMarkdownPreview(diff, viewer, fileComments);
       setupPreviewCommentHandlers(diff.file);
       // Trigger search highlighting for markdown preview
       onFileChange();
@@ -950,6 +950,11 @@ function renderDiff(diff, selectedFile, viewMode, comments = []) {
   // Filter comments for current file
   const fileComments = (comments || []).filter(c => c.file === diff.file);
 
+  // Get language from file path for syntax highlighting
+  const language = window.SidecarHighlighter
+    ? window.SidecarHighlighter.getLanguageFromPath(diff.file)
+    : 'plaintext';
+
   let html = \`
     <table class="diff-table">
       <colgroup>
@@ -958,7 +963,7 @@ function renderDiff(diff, selectedFile, viewMode, comments = []) {
         <col class="col-content">
       </colgroup>
   \`;
-  html += renderChunksToHtml(diff.chunks, chunkStates, fileComments);
+  html += await renderChunksToHtml(diff.chunks, chunkStates, fileComments, language);
   html += '</table>';
 
   viewer.innerHTML = html;
@@ -969,105 +974,19 @@ function renderDiff(diff, selectedFile, viewMode, comments = []) {
 }
 
 // ===== Markdown Rendering =====
-function highlightCode(code, lang) {
-  const keywords = {
-    js: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined'],
-    ts: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined', 'interface', 'type', 'enum', 'implements', 'private', 'public', 'protected', 'readonly', 'as', 'is'],
-    javascript: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined'],
-    typescript: ['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'class', 'extends', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'throw', 'new', 'this', 'super', 'typeof', 'instanceof', 'true', 'false', 'null', 'undefined', 'interface', 'type', 'enum', 'implements', 'private', 'public', 'protected', 'readonly', 'as', 'is'],
-    python: ['def', 'class', 'return', 'if', 'elif', 'else', 'for', 'while', 'import', 'from', 'as', 'try', 'except', 'raise', 'with', 'lambda', 'yield', 'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is', 'pass', 'break', 'continue', 'global', 'nonlocal', 'async', 'await'],
-    py: ['def', 'class', 'return', 'if', 'elif', 'else', 'for', 'while', 'import', 'from', 'as', 'try', 'except', 'raise', 'with', 'lambda', 'yield', 'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is', 'pass', 'break', 'continue', 'global', 'nonlocal', 'async', 'await'],
-    java: ['class', 'public', 'private', 'protected', 'static', 'final', 'void', 'int', 'String', 'boolean', 'return', 'if', 'else', 'for', 'while', 'new', 'this', 'super', 'extends', 'implements', 'interface', 'try', 'catch', 'throw', 'throws', 'import', 'package', 'true', 'false', 'null'],
-    go: ['func', 'return', 'if', 'else', 'for', 'range', 'var', 'const', 'type', 'struct', 'interface', 'package', 'import', 'defer', 'go', 'chan', 'select', 'case', 'default', 'break', 'continue', 'map', 'make', 'new', 'nil', 'true', 'false'],
-    rust: ['fn', 'let', 'mut', 'const', 'if', 'else', 'for', 'while', 'loop', 'match', 'return', 'struct', 'enum', 'impl', 'trait', 'pub', 'use', 'mod', 'self', 'Self', 'super', 'true', 'false', 'Some', 'None', 'Ok', 'Err', 'async', 'await', 'move', 'ref', 'where'],
-    css: ['@import', '@media', '@keyframes', '@font-face', 'important'],
-    sql: ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'TABLE', 'INDEX', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'AS', 'NULL', 'NOT', 'IN', 'LIKE', 'BETWEEN'],
-    bash: ['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case', 'esac', 'function', 'return', 'exit', 'export', 'local', 'readonly', 'shift', 'true', 'false'],
-    sh: ['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case', 'esac', 'function', 'return', 'exit', 'export', 'local', 'readonly', 'shift', 'true', 'false'],
-    json: [],
-    html: [],
-    xml: [],
-    yaml: ['true', 'false', 'null', 'yes', 'no'],
-    yml: ['true', 'false', 'null', 'yes', 'no'],
-    markdown: [],
-    md: []
-  };
 
-  const builtins = {
-    js: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window'],
-    ts: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window', 'Partial', 'Required', 'Readonly', 'Record', 'Pick', 'Omit', 'Exclude', 'Extract', 'ReturnType'],
-    javascript: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window'],
-    typescript: ['console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Promise', 'Map', 'Set', 'Error', 'RegExp', 'setTimeout', 'setInterval', 'fetch', 'document', 'window', 'Partial', 'Required', 'Readonly', 'Record', 'Pick', 'Omit', 'Exclude', 'Extract', 'ReturnType'],
-    python: ['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr', 'open', 'input', 'sorted', 'map', 'filter', 'zip', 'enumerate', 'sum', 'min', 'max', 'abs', 'round'],
-    py: ['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr', 'open', 'input', 'sorted', 'map', 'filter', 'zip', 'enumerate', 'sum', 'min', 'max', 'abs', 'round'],
-    bash: ['mkdir', 'cd', 'ls', 'rm', 'cp', 'mv', 'cat', 'echo', 'grep', 'find', 'chmod', 'chown', 'sudo', 'apt', 'yum', 'brew', 'npm', 'npx', 'pnpm', 'yarn', 'git', 'curl', 'wget', 'tar', 'zip', 'unzip', 'ssh', 'scp', 'touch', 'head', 'tail', 'sed', 'awk', 'sort', 'uniq', 'wc', 'pwd', 'which', 'man', 'kill', 'ps', 'top', 'df', 'du', 'ln', 'source', 'alias', 'env', 'set', 'unset'],
-    sh: ['mkdir', 'cd', 'ls', 'rm', 'cp', 'mv', 'cat', 'echo', 'grep', 'find', 'chmod', 'chown', 'sudo', 'apt', 'yum', 'brew', 'npm', 'npx', 'pnpm', 'yarn', 'git', 'curl', 'wget', 'tar', 'zip', 'unzip', 'ssh', 'scp', 'touch', 'head', 'tail', 'sed', 'awk', 'sort', 'uniq', 'wc', 'pwd', 'which', 'man', 'kill', 'ps', 'top', 'df', 'du', 'ln', 'source', 'alias', 'env', 'set', 'unset']
-  };
-
-  const types = {
-    ts: ['string', 'number', 'boolean', 'void', 'null', 'undefined', 'never', 'any', 'unknown', 'object', 'symbol', 'bigint'],
-    typescript: ['string', 'number', 'boolean', 'void', 'null', 'undefined', 'never', 'any', 'unknown', 'object', 'symbol', 'bigint']
-  };
-
-  let escaped = escapeHtml(code);
-  const langKeywords = keywords[lang] || keywords['js'] || [];
-  const langBuiltins = builtins[lang] || [];
-  const langTypes = types[lang] || [];
-
-  const placeholders = [];
-  const savePlaceholder = (html) => {
-    const idx = placeholders.length;
-    placeholders.push(html);
-    return '___HLPH' + idx + '___';
-  };
-
-  escaped = escaped.replace(/(\\/{2}.*)$/gm, (m) => savePlaceholder('<span class="hljs-comment">' + m + '</span>'));
-  if (['python', 'py', 'bash', 'sh', 'yaml', 'yml'].includes(lang)) {
-    escaped = escaped.replace(/(#.*)$/gm, (m) => savePlaceholder('<span class="hljs-comment">' + m + '</span>'));
+/**
+ * Highlight code using Shiki (async) or fallback to plain escaped text
+ */
+async function highlightCodeAsync(code, lang) {
+  if (window.SidecarHighlighter && lang) {
+    try {
+      return await window.SidecarHighlighter.highlightCodeBlock(code, lang);
+    } catch (e) {
+      console.warn('Code highlighting failed:', e);
+    }
   }
-  escaped = escaped.replace(/(\\/\\*[\\s\\S]*?\\*\\/)/g, (m) => savePlaceholder('<span class="hljs-comment">' + m + '</span>'));
-  escaped = escaped.replace(/(&lt;!--[\\s\\S]*?--&gt;)/g, (m) => savePlaceholder('<span class="hljs-comment">' + m + '</span>'));
-
-  escaped = escaped.replace(/("(?:[^"\\\\]|\\\\.)*")/g, (m) => savePlaceholder('<span class="hljs-string">' + m + '</span>'));
-  escaped = escaped.replace(/('(?:[^'\\\\]|\\\\.)*')/g, (m) => savePlaceholder('<span class="hljs-string">' + m + '</span>'));
-  escaped = escaped.replace(/(\`(?:[^\`\\\\]|\\\\.)*\`)/g, (m) => savePlaceholder('<span class="hljs-string">' + m + '</span>'));
-
-  escaped = escaped.replace(/\\b(\\d+\\.?\\d*)\\b/g, (m) => savePlaceholder('<span class="hljs-number">' + m + '</span>'));
-
-  for (const kw of langKeywords) {
-    const regex = new RegExp('\\\\b(' + kw + ')\\\\b', 'g');
-    escaped = escaped.replace(regex, (_, m) => savePlaceholder('<span class="hljs-keyword">' + m + '</span>'));
-  }
-
-  for (const bi of langBuiltins) {
-    const regex = new RegExp('\\\\b(' + bi + ')\\\\b', 'g');
-    escaped = escaped.replace(regex, (_, m) => savePlaceholder('<span class="hljs-builtin">' + m + '</span>'));
-  }
-
-  for (const tp of langTypes) {
-    const regex = new RegExp('\\\\b(' + tp + ')\\\\b', 'g');
-    escaped = escaped.replace(regex, (_, m) => savePlaceholder('<span class="hljs-type">' + m + '</span>'));
-  }
-
-  escaped = escaped.replace(/\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(/g, (m, name) => savePlaceholder('<span class="hljs-function">' + name + '</span>') + '(');
-
-  if (['ts', 'typescript'].includes(lang)) {
-    escaped = escaped.replace(/(?<!_)\\b([a-zA-Z_][a-zA-Z0-9_]*)(?!_)(\\??\\s*):/g, (m, name, suffix) => {
-      if (name.match(/^HLPH\\d+$/)) return m;
-      return savePlaceholder('<span class="hljs-property">' + name + '</span>') + suffix + ':';
-    });
-  }
-
-  if (['html', 'xml', 'jsx', 'tsx'].includes(lang)) {
-    escaped = escaped.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9]*)/g, (m, prefix, tag) => prefix + savePlaceholder('<span class="hljs-tag">' + tag + '</span>'));
-    escaped = escaped.replace(/\\s([a-zA-Z-]+)=/g, (m, attr) => ' ' + savePlaceholder('<span class="hljs-attr">' + attr + '</span>') + '=');
-  }
-
-  placeholders.forEach((val, idx) => {
-    escaped = escaped.replace('___HLPH' + idx + '___', val);
-  });
-
-  return escaped;
+  return escapeHtml(code);
 }
 
 function renderTable(rows) {
@@ -1119,14 +1038,22 @@ function renderTable(rows) {
   return tableHtml;
 }
 
-function renderMarkdown(text) {
-  const codeBlocks = [];
+async function renderMarkdown(text) {
+  // Extract code blocks for async highlighting
+  const codeBlockData = [];
   let html = text.replace(/\\\`\\\`\\\`([\\w+-]*)[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n[ \\t]*\\\`\\\`\\\`/g, (match, lang, code) => {
-    const index = codeBlocks.length;
-    const highlighted = highlightCode(code.trim(), lang);
-    codeBlocks.push('<pre><code class="language-' + (lang || '') + '">' + highlighted + '</code></pre>');
+    const index = codeBlockData.length;
+    codeBlockData.push({ lang, code: code.trim() });
     return '\\n{{CODE_BLOCK_' + index + '}}\\n';
   });
+
+  // Highlight all code blocks in parallel
+  const highlightedBlocks = await Promise.all(
+    codeBlockData.map(async ({ lang, code }) => {
+      const highlighted = await highlightCodeAsync(code, lang);
+      return '<pre><code class="language-' + (lang || '') + ' shiki">' + highlighted + '</code></pre>';
+    })
+  );
 
   const inlineCode = [];
   html = html.replace(/\\\`([^\\\`\\n]+)\\\`/g, (match, code) => {
@@ -1278,7 +1205,7 @@ function renderMarkdown(text) {
 
   html = processedLines.join('\\n');
 
-  codeBlocks.forEach((block, i) => {
+  highlightedBlocks.forEach((block, i) => {
     html = html.replace('{{CODE_BLOCK_' + i + '}}', block);
   });
   inlineCode.forEach((code, i) => {
@@ -1357,9 +1284,9 @@ function processInline(text) {
   return result;
 }
 
-function renderMarkdownPreview(diff, container, comments = []) {
+async function renderMarkdownPreview(diff, container, comments = []) {
   if (diff.newFileContent) {
-    renderFullMarkdownWithHighlights(diff.newFileContent, diff.changedLineNumbers, container, diff.deletions, comments);
+    await renderFullMarkdownWithHighlights(diff.newFileContent, diff.changedLineNumbers, container, diff.deletions, comments);
     return;
   }
 
@@ -1382,7 +1309,7 @@ function renderMarkdownPreview(diff, container, comments = []) {
   let html = '<div class="markdown-preview">';
   for (const group of groups) {
     const content = group.lines.join('\\n');
-    const rendered = renderMarkdown(content);
+    const rendered = await renderMarkdown(content);
     if (group.isAddition) {
       html += '<div class="diff-addition">' + rendered + '</div>';
     } else {
@@ -1393,7 +1320,7 @@ function renderMarkdownPreview(diff, container, comments = []) {
   container.innerHTML = html;
 }
 
-function renderFullMarkdownWithHighlights(content, changedLineNumbers, container, deletions, comments = []) {
+async function renderFullMarkdownWithHighlights(content, changedLineNumbers, container, deletions, comments = []) {
   const lines = content.split('\\n');
   const totalLines = lines.length;
   const changedSet = new Set(changedLineNumbers || []);
@@ -1467,7 +1394,7 @@ function renderFullMarkdownWithHighlights(content, changedLineNumbers, container
 
   for (const group of groups) {
     const groupContent = group.lines.join('\\n');
-    const rendered = renderMarkdown(groupContent);
+    const rendered = await renderMarkdown(groupContent);
     const endLine = group.startLine + group.lines.length - 1;
 
     // Collect all unique comment color indices for this block
@@ -1753,7 +1680,7 @@ window.savePreviewCommentEdit = function(commentId) {
   cancelPreviewCommentEdit(commentId);
 };
 
-function renderChunksToHtml(chunks, chunkStates, comments = []) {
+async function renderChunksToHtml(chunks, chunkStates, comments = [], language = 'plaintext') {
   // Assign color index to each comment (for visual distinction)
   const commentColorMap = new Map();
   comments.forEach((comment, idx) => {
@@ -1773,7 +1700,27 @@ function renderChunksToHtml(chunks, chunkStates, comments = []) {
     }
   });
 
+  // Collect all line contents for batch highlighting
+  const allLineContents = [];
+  for (const chunk of chunks) {
+    for (const line of chunk.lines) {
+      allLineContents.push(line.content);
+    }
+  }
+
+  // Highlight all lines at once (async)
+  let highlightedContents = allLineContents.map(escapeHtml); // Default to escaped
+  if (window.SidecarHighlighter && language !== 'plaintext') {
+    try {
+      highlightedContents = await window.SidecarHighlighter.highlightLines(allLineContents, language);
+    } catch (e) {
+      console.warn('Syntax highlighting failed:', e);
+    }
+  }
+
   let html = '';
+  let lineIndex = 0;
+
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const state = chunkStates[i] || { isCollapsed: false, scopeLabel: null };
@@ -1808,6 +1755,9 @@ function renderChunksToHtml(chunks, chunkStates, comments = []) {
       const lineNum = line.newLineNumber || line.oldLineNumber || '';
       const isDeletion = line.type === 'deletion';
 
+      // Get highlighted content for this line
+      const highlightedContent = highlightedContents[lineIndex++] || escapeHtml(line.content);
+
       // Check if this line has comments (only show on non-deletion lines)
       const hasComments = !isDeletion && commentsByLine.has(lineNum);
       const lineComments = hasComments ? commentsByLine.get(lineNum) : [];
@@ -1839,7 +1789,7 @@ function renderChunksToHtml(chunks, chunkStates, comments = []) {
             \${rangeIndicators}
           </td>
           <td class="diff-line-num">\${lineNum}</td>
-          <td class="diff-line-content" data-prefix="\${prefix}">\${escapeHtml(line.content)}</td>
+          <td class="diff-line-content shiki" data-prefix="\${prefix}">\${highlightedContent}</td>
         </tr>
       \`;
 

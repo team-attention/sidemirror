@@ -62,7 +62,10 @@ export class SidecarPanelAdapter {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'out')]
+                localResourceRoots: [
+                    vscode.Uri.joinPath(context.extensionUri, 'out'),
+                    vscode.Uri.joinPath(context.extensionUri, 'dist')
+                ]
             }
         );
 
@@ -527,6 +530,14 @@ export class SidecarPanelAdapter {
     }
 
     private getHtmlForWebview(): string {
-        return getWebviewContent();
+        // Get URI for the bundled highlighter script
+        const highlighterScriptPath = vscode.Uri.joinPath(
+            this.context.extensionUri,
+            'dist',
+            'webview.js'
+        );
+        const highlighterScriptUri = this.panel.webview.asWebviewUri(highlighterScriptPath);
+
+        return getWebviewContent(highlighterScriptUri.toString());
     }
 }

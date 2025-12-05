@@ -60,9 +60,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "vscode:prepublish": "npm run esbuild-base -- --minify && npm run esbuild-webview -- --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
+    "esbuild-webview": "esbuild ./src/adapters/inbound/ui/webview/webview-entry.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser --target=es2020",
+    "esbuild": "npm run esbuild-base -- --sourcemap && npm run esbuild-webview -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
@@ -73,7 +74,8 @@
   },
   "dependencies": {
     "fast-glob": "^3.3.3",
-    "ignore": "^5.3.2"
+    "ignore": "^5.3.2",
+    "shiki": "^3.19.0"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
