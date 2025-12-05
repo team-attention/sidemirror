@@ -12,6 +12,7 @@ let isSelecting = false;
 let isResizing = false;
 let sidebarWidth = 320;
 let pendingScrollRestore = null;
+let collapsedFolders = new Set();
 
 // ===== DOM references =====
 const bodyEl = document.body;
@@ -471,7 +472,7 @@ function buildFileTree(files) {
             path: currentPath,
             type: 'folder',
             children: [],
-            isExpanded: true
+            isExpanded: !collapsedFolders.has(currentPath)
           };
           current.children.push(folder);
         }
@@ -563,8 +564,17 @@ function setupTreeHandlers() {
       e.stopPropagation();
       const toggle = folder.querySelector('.tree-toggle');
       const children = folder.nextElementSibling;
+      const folderPath = folder.dataset.folder;
+
       toggle.classList.toggle('collapsed');
       children.classList.toggle('collapsed');
+
+      // Update collapsed state
+      if (children.classList.contains('collapsed')) {
+        collapsedFolders.add(folderPath);
+      } else {
+        collapsedFolders.delete(folderPath);
+      }
     };
   });
 
@@ -1188,7 +1198,27 @@ async function renderMarkdown(text) {
     }
 
     if (line.trim() === '') {
-      closeAllLists();
+      // Look ahead to check if next non-empty line is a list item
+      let nextNonEmptyLine = null;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].trim() !== '') {
+          nextNonEmptyLine = lines[j];
+          break;
+        }
+      }
+
+      // Check if next line is a list item at root level (indent 0)
+      const isNextRootListItem = nextNonEmptyLine && (
+        nextNonEmptyLine.match(/^\\d+\\.\\s+/) || // ordered list at root
+        nextNonEmptyLine.match(/^[-*+]\\s+/)      // unordered list at root
+      );
+
+      if (isNextRootListItem && listStack.length > 0) {
+        // Close nested lists but keep root list open
+        closeListsToLevel(1);
+      } else {
+        closeAllLists();
+      }
       processedLines.push('');
       continue;
     }
