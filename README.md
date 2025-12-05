@@ -1,10 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/sidecar-full.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/sidecar-full.svg">
-  <img alt="Sidecar" src="assets/sidecar-full.svg" width="400">
-</picture>
+<img alt="Sidecar" src="assets/sidecar-full.png" width="400">
 
 <br />
 
