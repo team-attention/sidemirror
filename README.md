@@ -1,48 +1,85 @@
-# Sidecar
+<div align="center">
 
-> Real-time code review panel for AI coding assistants
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/sidecar-full.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/sidecar-full.svg">
+  <img alt="Sidecar" src="assets/sidecar-full.svg" width="400">
+</picture>
 
-Sidecar displays file changes from AI coding tools (Claude Code, Codex, Gemini CLI) in a dedicated side panel, enabling you to review modifications as they happen.
+<br />
+
+**Building with AI, the right way.**
+
+
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/JakePark/Sidecar?label=Downloads&color=teal)](https://open-vsx.org/extension/JakePark/Sidecar)
+[![GitHub Stars](https://img.shields.io/github/stars/team-attention/sidecar?style=flat&color=yellow)](https://github.com/team-attention/sidecar)
+[![License](https://img.shields.io/github/license/team-attention/sidecar)](LICENSE)
+
+<br />
 
 https://github.com/user-attachments/assets/51aa09b2-072a-47f7-b8be-f49e05493ca6
 
+</div>
+
+<br />
+
+## Why Sidecar?
+
+Vibe coding is amazing... until you review the changes.
+
+AI writes fast. Too fast. Files pile up, changes scatter everywhere, and suddenly you're juggling tabs, hunting diffs, fixing things by hand. The conversation breaks. The momentum dies.
+
+**Sidecar keeps the conversation going.**
+
+One seamless flow — talk to AI, review what it built, give feedback, keep building. All in one place, without breaking the rhythm.
+
+---
+
 ## Features
 
-### Automatic AI Detectionssss
-Sidecar monitors your terminal and automatically activates when it detects Claude Code, Codex, or Gemini CLI. The review panel opens alongside your editor without manual intervention.
+**👁️ Unified View**
+All AI outputs — code, docs, configs — organized in a single panel. No more hunting through files.
 
-### Structured Diff View
-File changes are displayed with collapsible chunks organized by code scope. Each chunk header shows the relevant function, class, or module name using LSP symbol detection, making it easy to understand the context of changessss.
+**💬 Inline Comments**
+Select lines, leave feedback, send to AI. Talk to AI in context, not in a separate terminal.
 
-### File Tree with Status Indicators
-Modified files appear in a hierarchical tree view with visual status badges:
-- **A** (green) — Added files
-- **M** (yellow) — Modified files
-- **D** (red) — Deleted files
+**🧩 Structured Diffs**
+Changes grouped by function, class, or module. See the intent, not just the diff.
 
-### Inline Review Comments
-Select single or multiple lines in the diff view to add comments. Comments are collected in the sidebar and can be sent directly to the active AI terminal with one click.
+---
 
-### Markdown Preview
-For markdown files, toggle between diff view and rendered preview to see documentation changes as they will appear.
+## Quick Start
 
-## Usage
+```
+1. Install from VS Marketplace
+2. Start Claude Code, Codex, or Gemini CLI
+3. Sidecar opens automatically
+```
 
-**Automatic**: Start any supported AI tool in VS Code's integrated terminal. Sidecar opens automatically.
+---
 
-**Manual**: Open Command Palette (`Cmd+Shift+P`) → `Sidecar: Show Panel`
+## Supported AI Tools
 
-## Extension Settings
+<table>
+  <tr>
+    <td align="center"><a href="https://claude.ai/code"><strong>Claude Code</strong></a><br/>Anthropic</td>
+    <td align="center"><a href="https://github.com/openai/codex"><strong>Codex CLI</strong></a><br/>OpenAI</td>
+    <td align="center"><a href="https://github.com/google-gemini/gemini-cli"><strong>Gemini CLI</strong></a><br/>Google</td>
+  </tr>
+</table>
+
+---
+
+## Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `sidecar.autoDetect` | `true` | Automatically detect AI coding tools in terminal |
-| `sidecar.autoShowPanel` | `true` | Open Sidecar panel when AI tool is detected |
-| `sidecar.includeFiles` | `[]` | Glob patterns for tracking gitignored files |
+| `sidecar.autoDetect` | `true` | Auto-detect AI tools in terminal |
+| `sidecar.autoShowPanel` | `true` | Open panel when AI tool detected |
+| `sidecar.includeFiles` | `[]` | Glob patterns for gitignored files |
 
-### Tracking Gitignored Files
-
-To track files normally excluded by `.gitignore` (build outputs, environment files):
+<details>
+<summary><strong>Tracking gitignored files</strong></summary>
 
 ```json
 {
@@ -50,22 +87,24 @@ To track files normally excluded by `.gitignore` (build outputs, environment fil
 }
 ```
 
+</details>
+
+---
+
 ## Requirements
 
-- VS Code 1.93.0 or later
+VS Code 1.93.0+
 
-## Supported AI Tools
-
-- [Claude Code](https://claude.ai/code) by Anthropic
-- [Codex CLI](https://github.com/openai/codex) by OpenAI
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) by Google
+---
 
 ## Links
 
-- [GitHub Repository](https://github.com/team-attention/sidecar)
-- [Report Issues](https://github.com/team-attention/sidecar/issues)
-- [Changelog](https://github.com/team-attention/sidecar/releases)
+[GitHub](https://github.com/eatnug/sidecar) · [Issues](https://github.com/eatnug/sidecar/issues) · [Changelog](https://github.com/eatnug/sidecar/releases)
 
-## License
+---
 
-[MIT](LICENSE)
+<div align="center">
+
+**MIT License**
+
+</div>
