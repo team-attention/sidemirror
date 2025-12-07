@@ -1,6 +1,23 @@
 export const webviewScript = `
 const vscode = acquireVsCodeApi();
 
+// ===== AbortController for event listener cleanup =====
+let globalAbortController = new AbortController();
+
+function resetAbortController() {
+  globalAbortController.abort();
+  globalAbortController = new AbortController();
+}
+
+function getSignal() {
+  return globalAbortController.signal;
+}
+
+// ===== Collection size limits =====
+const MAX_COLLAPSED_FOLDERS = 1000;
+const MAX_SEARCH_MATCHES = 500;
+const MAX_HIGHLIGHT_ENTRIES = 10000;
+
 // ===== Local UI state (not from application) =====
 let selectedLineNum = null;
 let selectedLineElement = null;
@@ -14,6 +31,15 @@ let sidebarWidth = 320;
 let pendingScrollRestore = null;
 let collapsedFolders = new Set();
 let currentFile = null;  // Track current file for scroll position saving
+
+// ===== Size-limited collection helpers =====
+function addCollapsedFolder(folderPath) {
+  if (collapsedFolders.size >= MAX_COLLAPSED_FOLDERS) {
+    const first = collapsedFolders.values().next().value;
+    if (first) collapsedFolders.delete(first);
+  }
+  collapsedFolders.add(folderPath);
+}
 
 // ===== DOM references =====
 const bodyEl = document.body;
@@ -40,7 +66,7 @@ function collapseSidebar() {
 
 toggleButton.addEventListener('click', () => {
   bodyEl.classList.contains('sidebar-collapsed') ? expandSidebar() : collapseSidebar();
-});
+}, { signal: getSignal() });
 
 // ===== Resizer =====
 resizer.addEventListener('mousedown', (e) => {
@@ -49,14 +75,14 @@ resizer.addEventListener('mousedown', (e) => {
   bodyEl.classList.add('resizing');
   resizer.classList.add('dragging');
   bodyEl.style.transition = 'none';
-});
+}, { signal: getSignal() });
 
 document.addEventListener('mousemove', (e) => {
   if (!isResizing) return;
   const clampedWidth = Math.max(150, Math.min(600, window.innerWidth - e.clientX));
   sidebarWidth = clampedWidth;
   bodyEl.style.gridTemplateColumns = \`1fr 4px \${clampedWidth}px\`;
-});
+}, { signal: getSignal() });
 
 document.addEventListener('mouseup', () => {
   if (!isResizing) return;
@@ -64,17 +90,17 @@ document.addEventListener('mouseup', () => {
   bodyEl.classList.remove('resizing');
   resizer.classList.remove('dragging');
   bodyEl.style.transition = '';
-});
+}, { signal: getSignal() });
 
 // ===== Submit button =====
 document.getElementById('submit-comments').addEventListener('click', () => {
   vscode.postMessage({ type: 'submitComments' });
-});
+}, { signal: getSignal() });
 
 // ===== Toggle uncommitted files =====
 document.getElementById('toggle-row').addEventListener('click', () => {
   vscode.postMessage({ type: 'toggleUncommitted' });
-});
+}, { signal: getSignal() });
 
 // ===== File Search =====
 const searchInput = document.getElementById('file-search');
@@ -92,20 +118,20 @@ searchInput.addEventListener('input', (e) => {
     currentSearchQuery = query;
     vscode.postMessage({ type: 'setSearchQuery', query });
   }, 200);
-});
+}, { signal: getSignal() });
 
 searchClear.addEventListener('click', () => {
   searchInput.value = '';
   searchClear.style.display = 'none';
   currentSearchQuery = '';
   vscode.postMessage({ type: 'setSearchQuery', query: '' });
-});
+}, { signal: getSignal() });
 
 // ===== View Mode Toggle (List/Tree) =====
 const viewModeToggle = document.getElementById('view-mode-toggle');
 viewModeToggle.addEventListener('click', () => {
   vscode.postMessage({ type: 'toggleViewMode' });
-});
+}, { signal: getSignal() });
 
 // ===== Diff Toolbar (Collapse + Search) =====
 const diffToolbar = document.getElementById('diff-toolbar');
@@ -121,7 +147,7 @@ let diffSearchCurrentIndex = -1;
 
 diffCollapseAll.addEventListener('click', () => {
   vscode.postMessage({ type: 'toggleAllChunks' });
-});
+}, { signal: getSignal() });
 
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
@@ -129,7 +155,7 @@ document.addEventListener('keydown', (e) => {
     diffSearchInput.focus();
     diffSearchInput.select();
   }
-});
+}, { signal: getSignal() });
 
 function closeDiffSearch() {
   diffSearchQuery = '';
@@ -151,15 +177,15 @@ diffSearchInput.addEventListener('keydown', (e) => {
       navigateDiffSearch(1);
     }
   }
-});
+}, { signal: getSignal() });
 
 diffSearchInput.addEventListener('input', (e) => {
   diffSearchQuery = e.target.value;
   performDiffSearch();
-});
+}, { signal: getSignal() });
 
-diffSearchPrev.addEventListener('click', () => navigateDiffSearch(-1));
-diffSearchNext.addEventListener('click', () => navigateDiffSearch(1));
+diffSearchPrev.addEventListener('click', () => navigateDiffSearch(-1), { signal: getSignal() });
+diffSearchNext.addEventListener('click', () => navigateDiffSearch(1), { signal: getSignal() });
 
 function performDiffSearch() {
   clearDiffHighlights();
@@ -177,12 +203,16 @@ function performDiffSearch() {
   const contentCells = viewer.querySelectorAll('.diff-line-content');
 
   contentCells.forEach((cell, cellIndex) => {
+    // Stop searching if we've hit the limit
+    if (diffSearchMatches.length >= MAX_SEARCH_MATCHES) return;
+
     const text = cell.textContent;
     const lowerText = text.toLowerCase();
     let startIndex = 0;
     let matchIndex;
 
     while ((matchIndex = lowerText.indexOf(query, startIndex)) !== -1) {
+      if (diffSearchMatches.length >= MAX_SEARCH_MATCHES) break;
       diffSearchMatches.push({
         cell,
         cellIndex,
@@ -282,20 +312,55 @@ function updateNavButtons() {
 }
 
 function onFileChange() {
+  // Clear file-specific collections to prevent memory accumulation
+  diffSearchMatches = [];
+  scopedDiffHighlightMap.clear();
+  diffSearchCurrentIndex = -1;
+
   if (diffSearchQuery) {
     performDiffSearch();
   }
 }
 
+// ===== Cleanup function for dispose =====
+function cleanup() {
+  // Abort all event listeners
+  globalAbortController.abort();
+
+  // Clear all collections
+  collapsedFolders.clear();
+  diffSearchMatches = [];
+  scopedDiffHighlightMap.clear();
+
+  // Clear UI state
+  selectedLineNum = null;
+  selectedLineElement = null;
+  selectionStartLine = null;
+  selectionEndLine = null;
+  isSelecting = false;
+  currentFile = null;
+  pendingScrollRestore = null;
+
+  // Clear DOM
+  const viewer = document.getElementById('diff-viewer');
+  if (viewer) viewer.innerHTML = '';
+  const sidebar = document.querySelector('.file-list');
+  if (sidebar) sidebar.innerHTML = '';
+}
+
 // ===== Single message handler - state-based rendering =====
 window.addEventListener('message', event => {
   const message = event.data;
+  if (message.type === 'dispose') {
+    cleanup();
+    return;
+  }
   if (message.type === 'render' && message.state) {
     renderState(message.state);
   } else if (message.type === 'scrollToLine') {
     scrollToLineInDiff(message.line, message.endLine, message.commentId);
   }
-});
+}, { signal: getSignal() });
 
 // Get the actual scrollable element (differs between diff table and preview mode)
 function getScrollableElement() {
@@ -622,9 +687,9 @@ function setupTreeHandlers() {
       toggle.classList.toggle('collapsed');
       children.classList.toggle('collapsed');
 
-      // Update collapsed state
+      // Update collapsed state (using size-limited helper)
       if (children.classList.contains('collapsed')) {
-        collapsedFolders.add(folderPath);
+        addCollapsedFolder(folderPath);
       } else {
         collapsedFolders.delete(folderPath);
       }
@@ -1036,8 +1101,9 @@ async function renderScopedDiff(scopedDiff, selectedFile, comments = [], hasDiff
     }
   }
 
-  // Build map of lineNumber -> highlightedContent
+  // Build map of lineNumber -> highlightedContent (with size limit)
   for (let i = 0; i < allLines.length; i++) {
+    if (scopedDiffHighlightMap.size >= MAX_HIGHLIGHT_ENTRIES) break;
     scopedDiffHighlightMap.set(allLines[i].lineNumber, highlightedContents[i]);
   }
 
@@ -1342,7 +1408,7 @@ function setupScopeHandlers() {
           scopeId
         });
       }
-    });
+    }, { signal: getSignal() });
   });
 
   // Expand/Collapse all buttons
@@ -1355,7 +1421,7 @@ function setupScopeHandlers() {
       } else if (action === 'collapse-all') {
         vscode.postMessage({ type: 'collapseAllScopes' });
       }
-    });
+    }, { signal: getSignal() });
   });
 }
 
@@ -2106,11 +2172,11 @@ function setupPreviewCommentHandlers(file) {
 
   preview.onmousedown = null;
   preview.onmousemove = null;
-  document.removeEventListener('mouseup', handlePreviewMouseUp);
+  // Note: We don't need to removeEventListener since AbortController handles cleanup
 
   preview.onmousedown = handlePreviewMouseDown;
   preview.onmousemove = handlePreviewMouseMove;
-  document.addEventListener('mouseup', handlePreviewMouseUp);
+  document.addEventListener('mouseup', handlePreviewMouseUp, { signal: getSignal() });
 }
 
 function handlePreviewMouseDown(e) {
@@ -2597,7 +2663,7 @@ function showInlineCommentForm(currentFile, startLine, endLine, existingText = '
   // Save draft on input
   textarea.addEventListener('input', () => {
     saveDraftComment(currentFile, actualStartLine, actualEndLine, textarea.value);
-  });
+  }, { signal: getSignal() });
 
   // Also save initial draft if there's existing text
   if (existingText) {

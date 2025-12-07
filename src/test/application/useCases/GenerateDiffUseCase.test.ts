@@ -9,8 +9,9 @@ import { FileSnapshot } from '../../../domain/entities/FileSnapshot';
 class MockSnapshotRepository implements ISnapshotRepository {
     private snapshots = new Map<string, FileSnapshot>();
 
-    async save(snapshot: FileSnapshot): Promise<void> {
+    async save(snapshot: FileSnapshot): Promise<boolean> {
         this.snapshots.set(snapshot.relativePath, snapshot);
+        return true;
     }
 
     async findByPath(relativePath: string): Promise<FileSnapshot | undefined> {
@@ -27,6 +28,10 @@ class MockSnapshotRepository implements ISnapshotRepository {
 
     getAll(): Map<string, FileSnapshot> {
         return new Map(this.snapshots);
+    }
+
+    getStats(): { count: number; totalSize: number } {
+        return { count: this.snapshots.size, totalSize: 0 };
     }
 
     setSnapshot(path: string, content: string): void {

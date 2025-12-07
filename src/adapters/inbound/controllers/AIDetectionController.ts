@@ -29,6 +29,11 @@ export class AIDetectionController {
     private sessions = new Map<string, SessionContext>();
     private debugChannel: vscode.OutputChannel | undefined;
 
+    /** Stale session cleanup */
+    private readonly SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+    private readonly CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+    private cleanupInterval: NodeJS.Timeout | null = null;
+
     private log(message: string): void {
         if (!this.debugChannel) return;
         const timestamp = new Date().toISOString().substring(11, 23);
@@ -95,6 +100,40 @@ export class AIDetectionController {
         }, 30000);
 
         context.subscriptions.push({ dispose: () => clearInterval(healthCheckInterval) });
+
+        // Start stale session cleanup interval
+        this.startCleanupInterval();
+        context.subscriptions.push({ dispose: () => this.disposeCleanupInterval() });
+    }
+
+    private startCleanupInterval(): void {
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupStaleSessions();
+        }, this.CLEANUP_INTERVAL_MS);
+    }
+
+    private disposeCleanupInterval(): void {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+    }
+
+    private cleanupStaleSessions(): void {
+        const now = Date.now();
+        for (const [terminalId, session] of this.sessions) {
+            if (now - session.lastActivityTime > this.SESSION_TIMEOUT_MS) {
+                this.log(`🧹 Cleaning up stale session: ${terminalId} (inactive for ${Math.round((now - session.lastActivityTime) / 60000)}min)`);
+                session.disposePanel();  // This will trigger flushSession
+            }
+        }
+    }
+
+    private updateSessionActivity(terminalId: string): void {
+        const session = this.sessions.get(terminalId);
+        if (session) {
+            session.lastActivityTime = Date.now();
+        }
     }
 
     private async handleCommandStart(
@@ -259,6 +298,7 @@ export class AIDetectionController {
             addCommentUseCase,
             captureSnapshotsUseCase,
             disposePanel: () => panel.dispose(),
+            lastActivityTime: Date.now(),
         };
 
         this.sessions.set(terminalId, context);
@@ -407,17 +447,29 @@ export class AIDetectionController {
     getActiveSession(terminal?: vscode.Terminal): AISession | undefined {
         if (terminal) {
             const terminalId = this.getTerminalId(terminal);
-            return this.sessions.get(terminalId)?.session;
+            const context = this.sessions.get(terminalId);
+            if (context) {
+                this.updateSessionActivity(terminalId);
+            }
+            return context?.session;
         }
 
         const activeTerminal = vscode.window.activeTerminal;
         if (activeTerminal) {
             const terminalId = this.getTerminalId(activeTerminal);
-            return this.sessions.get(terminalId)?.session;
+            const context = this.sessions.get(terminalId);
+            if (context) {
+                this.updateSessionActivity(terminalId);
+            }
+            return context?.session;
         }
 
-        const contexts = Array.from(this.sessions.values());
-        return contexts[contexts.length - 1]?.session;
+        // Avoid Array.from() - iterate directly to get last session
+        let lastContext: SessionContext | undefined;
+        for (const context of this.sessions.values()) {
+            lastContext = context;
+        }
+        return lastContext?.session;
     }
 
     /**

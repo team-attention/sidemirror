@@ -4,6 +4,7 @@ import { IHNApiPort } from '../../../application/ports/outbound/IHNApiPort';
 
 const HN_API_BASE = 'https://hacker-news.firebaseio.com/v0';
 const REQUEST_TIMEOUT = 10000;
+const MAX_RESPONSE_SIZE = 1024 * 1024; // 1MB
 
 export class HNApiGateway implements IHNApiPort {
   private async fetchJson<T>(url: string): Promise<T> {
@@ -14,14 +15,34 @@ export class HNApiGateway implements IHNApiPort {
           return;
         }
 
-        let data = '';
-        response.on('data', (chunk) => { data += chunk; });
+        // Use Buffer array instead of string concatenation for memory efficiency
+        const chunks: Buffer[] = [];
+        let totalSize = 0;
+
+        response.on('data', (chunk: Buffer) => {
+          totalSize += chunk.length;
+          if (totalSize > MAX_RESPONSE_SIZE) {
+            request.destroy();
+            chunks.length = 0; // Clear chunks to free memory
+            reject(new Error(`Response exceeds ${MAX_RESPONSE_SIZE} bytes limit`));
+            return;
+          }
+          chunks.push(chunk);
+        });
+
         response.on('end', () => {
           try {
+            const data = Buffer.concat(chunks).toString('utf8');
+            chunks.length = 0; // Clear chunks after use
             resolve(JSON.parse(data));
           } catch (error) {
             reject(new Error('Invalid JSON response'));
           }
+        });
+
+        response.on('error', (error) => {
+          chunks.length = 0; // Clear chunks on error
+          reject(error);
         });
       });
 

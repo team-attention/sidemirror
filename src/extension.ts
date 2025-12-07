@@ -78,6 +78,10 @@ export function activate(context: vscode.ExtensionContext) {
     aiDetectionController.activate(context);
     fileWatchController.activate(context);
 
+    // Start panel cleanup interval
+    SidecarPanelAdapter.startCleanupInterval();
+    context.subscriptions.push({ dispose: () => SidecarPanelAdapter.stopCleanupInterval() });
+
     // ===== Commands =====
 
     // Show Panel (마지막 활성 패널 표시)

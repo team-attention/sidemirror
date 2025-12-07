@@ -23,10 +23,49 @@ export class SidecarPanelAdapter {
     /** 활성 패널 추적 (terminalId → adapter) */
     private static activePanels = new Map<string, SidecarPanelAdapter>();
 
+    /** Stale panel cleanup interval */
+    private static cleanupInterval: NodeJS.Timeout | null = null;
+    private static readonly PANEL_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+    /** Start periodic cleanup of stale panels */
+    public static startCleanupInterval(): void {
+        if (SidecarPanelAdapter.cleanupInterval) return;
+
+        SidecarPanelAdapter.cleanupInterval = setInterval(() => {
+            SidecarPanelAdapter.cleanupStalePanels();
+        }, SidecarPanelAdapter.PANEL_CLEANUP_INTERVAL_MS);
+    }
+
+    /** Stop periodic cleanup */
+    public static stopCleanupInterval(): void {
+        if (SidecarPanelAdapter.cleanupInterval) {
+            clearInterval(SidecarPanelAdapter.cleanupInterval);
+            SidecarPanelAdapter.cleanupInterval = null;
+        }
+    }
+
+    /** Remove any stale panels from the map */
+    private static cleanupStalePanels(): void {
+        for (const [terminalId, adapter] of SidecarPanelAdapter.activePanels) {
+            if (!adapter.isActive()) {
+                SidecarPanelAdapter.activePanels.delete(terminalId);
+                try {
+                    adapter.dispose();
+                } catch (e) {
+                    // Already disposed, ignore
+                }
+            }
+        }
+    }
+
     /** 싱글톤 호환용 - 마지막 활성 패널 (deprecated, 마이그레이션용) */
     public static get currentPanel(): SidecarPanelAdapter | undefined {
-        const entries = Array.from(SidecarPanelAdapter.activePanels.values());
-        return entries[entries.length - 1];
+        // Avoid Array.from() - iterate directly to get last panel
+        let lastPanel: SidecarPanelAdapter | undefined;
+        for (const panel of SidecarPanelAdapter.activePanels.values()) {
+            lastPanel = panel;
+        }
+        return lastPanel;
     }
 
     private readonly panel: vscode.WebviewPanel;
@@ -691,15 +730,51 @@ export class SidecarPanelAdapter {
         return this.terminalId;
     }
 
+    /** Check if panel is still valid/active */
+    private isActive(): boolean {
+        try {
+            // Accessing panel.visible will throw if panel is disposed
+            return this.panel.visible !== undefined;
+        } catch {
+            return false;
+        }
+    }
+
     public dispose(): void {
+        // Remove from map first to prevent double cleanup
         SidecarPanelAdapter.activePanels.delete(this.terminalId);
-        this.onDisposeCallback?.();
-        this.panel.dispose();
+
+        // Notify webview to cleanup before destroying
+        try {
+            this.panel.webview.postMessage({ type: 'dispose' });
+        } catch (e) {
+            // Panel might already be disposed, ignore
+        }
+
+        // Fire callback
+        try {
+            this.onDisposeCallback?.();
+        } catch (e) {
+            // Ignore callback errors
+        }
+
+        // Dispose all disposables safely
         while (this.disposables.length) {
             const x = this.disposables.pop();
             if (x) {
-                x.dispose();
+                try {
+                    x.dispose();
+                } catch (e) {
+                    // Ignore individual dispose errors
+                }
             }
+        }
+
+        // Finally dispose the panel
+        try {
+            this.panel.dispose();
+        } catch (e) {
+            // Panel might already be disposed, ignore
         }
     }
 

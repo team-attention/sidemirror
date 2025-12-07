@@ -7,6 +7,57 @@ import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { DiffDisplayState, ChunkDisplayInfo, FileInfo } from '../../../application/ports/outbound/PanelState';
 import { DiffResult } from '../../../domain/entities/Diff';
 
+/**
+ * Fixed-size circular buffer to prevent memory growth.
+ * When full, new items overwrite oldest entries.
+ */
+class CircularBuffer<T> {
+    private buffer: (T | undefined)[];
+    private head = 0;
+    private tail = 0;
+    private _size = 0;
+
+    constructor(private capacity: number) {
+        this.buffer = new Array(capacity);
+    }
+
+    push(item: T): void {
+        this.buffer[this.tail] = item;
+        this.tail = (this.tail + 1) % this.capacity;
+        if (this._size < this.capacity) {
+            this._size++;
+        } else {
+            this.head = (this.head + 1) % this.capacity;
+        }
+    }
+
+    get size(): number {
+        return this._size;
+    }
+
+    *[Symbol.iterator](): Iterator<T> {
+        for (let i = 0; i < this._size; i++) {
+            const index = (this.head + i) % this.capacity;
+            yield this.buffer[index] as T;
+        }
+    }
+
+    countIf(predicate: (item: T) => boolean): number {
+        let count = 0;
+        for (const item of this) {
+            if (predicate(item)) count++;
+        }
+        return count;
+    }
+
+    clear(): void {
+        this.buffer = new Array(this.capacity);
+        this.head = 0;
+        this.tail = 0;
+        this._size = 0;
+    }
+}
+
 export class FileWatchController {
     private gitignore: Ignore;
     private includePatterns: Ignore;
@@ -21,7 +72,7 @@ export class FileWatchController {
 
     // ===== Debug metrics =====
     private eventCount = 0;
-    private eventCountWindow: number[] = []; // timestamps of recent events
+    private eventCountWindow = new CircularBuffer<number>(1000); // timestamps of recent events
     private processedCount = 0;
     private lastStatsLog = Date.now();
     private pendingEvents = 0;
@@ -44,10 +95,10 @@ export class FileWatchController {
         // Log stats every 10 seconds
         if (now - this.lastStatsLog < 10000) return;
 
-        // Calculate events per second (last 10 seconds)
+        // Calculate events per second (last 10 seconds) using circular buffer
         const windowStart = now - 10000;
-        this.eventCountWindow = this.eventCountWindow.filter(t => t > windowStart);
-        const eventsPerSecond = (this.eventCountWindow.length / 10).toFixed(1);
+        const recentCount = this.eventCountWindow.countIf(t => t > windowStart);
+        const eventsPerSecond = (recentCount / 10).toFixed(1);
 
         const memUsage = process.memoryUsage();
         const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
@@ -55,8 +106,8 @@ export class FileWatchController {
 
         this.log(`📊 STATS: events/sec=${eventsPerSecond}, pending=${this.pendingEvents}, maxPending=${this.maxPendingEvents}, processed=${this.processedCount}, heap=${heapMB}MB, rss=${rssMB}MB`);
 
-        if (this.eventCountWindow.length > 50) {
-            this.log(`⚠️ WARNING: High event rate detected! ${this.eventCountWindow.length} events in last 10 seconds`);
+        if (recentCount > 50) {
+            this.log(`⚠️ WARNING: High event rate detected! ${recentCount} events in last 10 seconds`);
         }
 
         this.lastStatsLog = now;

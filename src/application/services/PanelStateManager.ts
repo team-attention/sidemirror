@@ -130,19 +130,13 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Toggle =====
 
     toggleShowUncommitted(): void {
-        this.state = {
-            ...this.state,
-            showUncommitted: !this.state.showUncommitted,
-        };
+        this.state.showUncommitted = !this.state.showUncommitted;
         this.render();
     }
 
     setShowUncommitted(show: boolean): void {
         if (this.state.showUncommitted !== show) {
-            this.state = {
-                ...this.state,
-                showUncommitted: show,
-            };
+            this.state.showUncommitted = show;
             this.render();
         }
     }
@@ -173,10 +167,7 @@ export class PanelStateManager implements IPanelStateManager {
     }
 
     clearDiff(): void {
-        this.state = {
-            ...this.state,
-            diff: null,
-        };
+        this.state.diff = null;
         this.render();
     }
 
@@ -238,10 +229,7 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Scoped diff operations =====
 
     clearScopedDiff(): void {
-        this.state = {
-            ...this.state,
-            scopedDiff: null,
-        };
+        this.state.scopedDiff = null;
         this.render();
     }
 
@@ -374,50 +362,38 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Comment operations =====
 
     addComment(comment: CommentInfo): void {
-        this.state = {
-            ...this.state,
-            comments: [...this.state.comments, comment],
-        };
+        this.state.comments.push(comment);
         this.render();
     }
 
     updateComment(comment: CommentInfo): void {
         const index = this.state.comments.findIndex(c => c.id === comment.id);
         if (index !== -1) {
-            const newComments = [...this.state.comments];
-            newComments[index] = comment;
-            this.state = {
-                ...this.state,
-                comments: newComments,
-            };
+            this.state.comments[index] = comment;
             this.render();
         }
     }
 
     removeComment(id: string): void {
-        this.state = {
-            ...this.state,
-            comments: this.state.comments.filter(c => c.id !== id),
-        };
-        this.render();
+        const index = this.state.comments.findIndex(c => c.id === id);
+        if (index !== -1) {
+            this.state.comments.splice(index, 1);
+            this.render();
+        }
     }
 
     clearComments(): void {
-        this.state = {
-            ...this.state,
-            comments: [],
-        };
+        this.state.comments = [];
         this.render();
     }
 
     markCommentsAsSubmitted(ids: string[]): void {
         const idSet = new Set(ids);
-        this.state = {
-            ...this.state,
-            comments: this.state.comments.map(c =>
-                idSet.has(c.id) ? { ...c, isSubmitted: true } : c
-            ),
-        };
+        for (const comment of this.state.comments) {
+            if (idSet.has(comment.id)) {
+                comment.isSubmitted = true;
+            }
+        }
         this.render();
     }
 
@@ -428,10 +404,7 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== AI status =====
 
     setAIStatus(status: AIStatus): void {
-        this.state = {
-            ...this.state,
-            aiStatus: status,
-        };
+        this.state.aiStatus = status;
         this.render();
     }
 
@@ -439,20 +412,14 @@ export class PanelStateManager implements IPanelStateManager {
 
     setTreeView(isTree: boolean): void {
         if (this.state.isTreeView !== isTree) {
-            this.state = {
-                ...this.state,
-                isTreeView: isTree,
-            };
+            this.state.isTreeView = isTree;
             this.render();
         }
     }
 
     setDiffViewMode(mode: DiffViewMode): void {
         if (this.state.diffViewMode !== mode) {
-            this.state = {
-                ...this.state,
-                diffViewMode: mode,
-            };
+            this.state.diffViewMode = mode;
             this.render();
         }
     }
@@ -461,10 +428,7 @@ export class PanelStateManager implements IPanelStateManager {
 
     setSearchQuery(query: string): void {
         if (this.state.searchQuery !== query) {
-            this.state = {
-                ...this.state,
-                searchQuery: query,
-            };
+            this.state.searchQuery = query;
             this.render();
         }
     }
@@ -476,19 +440,13 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Draft comment operations =====
 
     setDraftComment(draft: DraftComment | null): void {
-        this.state = {
-            ...this.state,
-            draftComment: draft,
-        };
+        this.state.draftComment = draft;
         // Don't call render - draft comment is updated silently
     }
 
     clearDraftComment(): void {
         if (this.state.draftComment !== null) {
-            this.state = {
-                ...this.state,
-                draftComment: null,
-            };
+            this.state.draftComment = null;
             this.render();
         }
     }
@@ -496,13 +454,7 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Scroll position operations =====
 
     setFileScrollPosition(filePath: string, scrollTop: number): void {
-        this.state = {
-            ...this.state,
-            fileScrollPositions: {
-                ...this.state.fileScrollPositions,
-                [filePath]: scrollTop,
-            },
-        };
+        this.state.fileScrollPositions[filePath] = scrollTop;
         // Don't call render - scroll position is updated silently
     }
 
@@ -521,42 +473,30 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== HN feed operations =====
 
     setHNFeedLoading(): void {
-        this.state = {
-            ...this.state,
-            hnFeedStatus: 'loading',
-            hnFeedError: undefined,
-        };
+        this.state.hnFeedStatus = 'loading';
+        this.state.hnFeedError = undefined;
         this.render();
     }
 
     setHNStories(stories: HNStoryInfo[], fetchedAt: number): void {
-        this.state = {
-            ...this.state,
-            hnStories: stories,
-            hnFeedStatus: 'success',
-            hnFeedError: undefined,
-            hnLastFetchTime: fetchedAt,
-        };
+        this.state.hnStories = stories;
+        this.state.hnFeedStatus = 'success';
+        this.state.hnFeedError = undefined;
+        this.state.hnLastFetchTime = fetchedAt;
         this.render();
     }
 
     setHNFeedError(error: string): void {
-        this.state = {
-            ...this.state,
-            hnFeedStatus: 'error',
-            hnFeedError: error,
-        };
+        this.state.hnFeedStatus = 'error';
+        this.state.hnFeedError = error;
         this.render();
     }
 
     clearHNFeed(): void {
-        this.state = {
-            ...this.state,
-            hnStories: [],
-            hnFeedStatus: 'idle',
-            hnFeedError: undefined,
-            hnLastFetchTime: undefined,
-        };
+        this.state.hnStories = [];
+        this.state.hnFeedStatus = 'idle';
+        this.state.hnFeedError = undefined;
+        this.state.hnLastFetchTime = undefined;
         this.render();
     }
 

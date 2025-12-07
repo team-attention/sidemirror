@@ -33,4 +33,7 @@ export interface SessionContext {
 
     /** 패널 dispose 콜백 (AIDetectionController에서 설정) */
     disposePanel: () => void;
+
+    /** 마지막 활동 시간 (stale session 정리용) */
+    lastActivityTime: number;
 }
