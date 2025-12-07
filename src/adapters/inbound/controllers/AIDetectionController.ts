@@ -13,11 +13,13 @@ import { IPanelStateManager } from '../../../application/services/IPanelStateMan
 import { PanelStateManager } from '../../../application/services/PanelStateManager';
 import { CaptureSnapshotsUseCase } from '../../../application/useCases/CaptureSnapshotsUseCase';
 import { GenerateDiffUseCase } from '../../../application/useCases/GenerateDiffUseCase';
+import { GenerateScopedDiffUseCase } from '../../../application/useCases/GenerateScopedDiffUseCase';
 import { AddCommentUseCase } from '../../../application/useCases/AddCommentUseCase';
 import { EditCommentUseCase } from '../../../application/useCases/EditCommentUseCase';
 import { DeleteCommentUseCase } from '../../../application/useCases/DeleteCommentUseCase';
 import { SubmitCommentsUseCase } from '../../../application/useCases/SubmitCommentsUseCase';
 import { IFetchHNStoriesUseCase } from '../../../application/ports/inbound/IFetchHNStoriesUseCase';
+import { ScopeMappingService } from '../../../domain/services/ScopeMappingService';
 import { InMemorySnapshotRepository } from '../../../infrastructure/repositories/InMemorySnapshotRepository';
 import { VscodeTerminalGateway } from '../../outbound/gateways/VscodeTerminalGateway';
 import { SidecarPanelAdapter } from '../ui/SidecarPanelAdapter';
@@ -195,6 +197,14 @@ export class AIDetectionController {
             this.commentRepository
         );
 
+        const scopeMappingService = new ScopeMappingService();
+        const generateScopedDiffUseCase = new GenerateScopedDiffUseCase(
+            generateDiffUseCase,
+            this.symbolPort,
+            this.fileSystemGateway,
+            scopeMappingService
+        );
+
         // 스냅샷 캡처
         try {
             const config = vscode.workspace.getConfiguration('sidecar');
@@ -234,7 +244,8 @@ export class AIDetectionController {
             this.symbolPort,
             editCommentUseCase,
             deleteCommentUseCase,
-            this.fetchHNStoriesUseCase
+            this.fetchHNStoriesUseCase,
+            generateScopedDiffUseCase
         );
 
         // ===== SessionContext 생성 및 저장 =====

@@ -304,7 +304,7 @@ function getScrollableElement() {
   return document.getElementById('diff-viewer');
 }
 
-function renderState(state) {
+async function renderState(state) {
   // Auto-fetch HN stories when panel is first shown and no file is selected
   if (!state.selectedFile && !state.diff && state.hnFeedStatus === 'idle') {
     vscode.postMessage({ type: 'refreshHNFeed' });
@@ -352,10 +352,16 @@ function renderState(state) {
   // Update current file tracker
   currentFile = newFile;
 
-  renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView, state.searchQuery, state.diff);
+  renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView, state.searchQuery, state.diff || state.scopedDiff);
   renderComments(state.comments);
   renderAIStatus(state.aiStatus);
-  renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments, state.hnStories, state.hnFeedStatus, state.hnFeedError);
+
+  // Render based on diffViewMode
+  if (state.diffViewMode === 'scope' && state.scopedDiff) {
+    await renderScopedDiff(state.scopedDiff, state.selectedFile, state.comments, !!state.diff);
+  } else {
+    await renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments, !!state.scopedDiff, state.hnStories, state.hnFeedStatus, state.hnFeedError);
+  }
 
   // Restore scroll position after render
   if (scrollToRestore > 0) {
@@ -942,8 +948,500 @@ function renderAIStatus(aiStatus) {
   }
 }
 
+// ===== Scoped Diff Rendering =====
+const SCOPE_ICONS = {
+  class: '📄',
+  method: '🔧',
+  function: '📌',
+  constructor: '🏗️',
+  interface: '📐',
+  enum: '📊',
+  module: '📦',
+  namespace: '🗂️'
+};
+
+let scopedDiffCurrentFile = null;
+let scopedDiffHighlightMap = new Map();
+
+async function renderScopedDiff(scopedDiff, selectedFile, comments = [], hasDiff = false) {
+  const header = document.querySelector('.diff-header-title');
+  const stats = document.getElementById('diff-stats');
+  const viewer = document.getElementById('diff-viewer');
+
+  scopedDiffCurrentFile = selectedFile;
+  scopedDiffHighlightMap = new Map();
+
+  if (!scopedDiff) {
+    header.textContent = selectedFile || 'Select a file to review';
+    stats.innerHTML = '';
+    diffToolbar.style.display = 'none';
+    viewer.innerHTML = \`
+      <div class="placeholder">
+        <div class="placeholder-icon">\${selectedFile ? '✓' : '📝'}</div>
+        <div class="placeholder-text">\${selectedFile ? 'No changes in this file' : 'Select a modified file to view changes'}</div>
+      </div>
+    \`;
+    return;
+  }
+
+  diffToolbar.style.display = 'flex';
+
+  header.textContent = scopedDiff.file;
+  header.style.cursor = 'pointer';
+  header.onclick = () => {
+    vscode.postMessage({ type: 'openFile', file: scopedDiff.file });
+  };
+
+  const toggleHtml = hasDiff
+    ? '<div class="view-mode-toggle"><button class="toggle-btn" onclick="toggleDiffViewMode()">Diff</button></div>'
+    : '';
+  stats.innerHTML = \`
+    <span class="stat-added">+\${scopedDiff.stats.additions}</span>
+    <span class="stat-removed">-\${scopedDiff.stats.deletions}</span>
+    \${toggleHtml}
+  \`;
+
+  if (!scopedDiff.hasScopeData) {
+    viewer.innerHTML = \`
+      <div class="scope-fallback-message">
+        Scope view unavailable for this file type. Showing diff view.
+      </div>
+    \`;
+    return;
+  }
+
+  // Collect all line contents for batch syntax highlighting
+  const allLines = [];
+  collectScopeLines(scopedDiff.scopes, allLines);
+  if (scopedDiff.orphanLines) {
+    for (const line of scopedDiff.orphanLines) {
+      allLines.push({ lineNumber: line.lineNumber, content: line.content });
+    }
+  }
+
+  // Batch highlight all lines
+  const language = window.SidecarHighlighter
+    ? window.SidecarHighlighter.getLanguageFromPath(scopedDiff.file)
+    : 'plaintext';
+
+  let highlightedContents = allLines.map(l => escapeHtml(l.content));
+  if (window.SidecarHighlighter && language !== 'plaintext') {
+    try {
+      highlightedContents = await window.SidecarHighlighter.highlightLines(
+        allLines.map(l => l.content),
+        language
+      );
+    } catch (e) {
+      console.warn('Syntax highlighting failed:', e);
+    }
+  }
+
+  // Build map of lineNumber -> highlightedContent
+  for (let i = 0; i < allLines.length; i++) {
+    scopedDiffHighlightMap.set(allLines[i].lineNumber, highlightedContents[i]);
+  }
+
+  let html = '';
+
+  // Scope controls
+  html += \`
+    <div class="scope-controls">
+      <button class="scope-control-btn" data-action="expand-all">
+        Expand All
+      </button>
+      <button class="scope-control-btn" data-action="collapse-all">
+        Collapse All
+      </button>
+    </div>
+  \`;
+
+  // Get filename from path
+  const fileName = scopedDiff.file.split('/').pop() || scopedDiff.file;
+
+  // Scope tree with root file scope
+  html += '<div class="scope-tree">';
+
+  // Root file scope that contains everything
+  const fileHasChanges = scopedDiff.stats.additions > 0 || scopedDiff.stats.deletions > 0;
+  const fileStatsHtml = fileHasChanges
+    ? '<span class="added">+' + scopedDiff.stats.additions + '</span> <span class="removed">-' + scopedDiff.stats.deletions + '</span>'
+    : '<span class="no-changes">unchanged</span>';
+
+  html += \`
+    <div class="scope-node file-root" data-scope-id="file-root">
+      <div class="scope-header \${fileHasChanges ? 'has-changes' : ''}">
+        <span class="scope-toggle">▼</span>
+        <span class="scope-icon">📄</span>
+        <span class="scope-name">\${escapeHtml(fileName)}</span>
+        <span class="scope-kind">file</span>
+        <span class="scope-stats">\${fileStatsHtml}</span>
+      </div>
+      <div class="scope-content">
+  \`;
+
+  // Build a virtual root scope that interleaves orphan lines and scopes
+  const orphanLines = scopedDiff.orphanLines || [];
+  const scopes = scopedDiff.scopes || [];
+
+  if (scopes.length === 0) {
+    // No scopes - just render orphan lines
+    if (orphanLines.length > 0) {
+      html += \`<div class="scope-lines">\${renderScopeDiffLines(orphanLines, comments)}</div>\`;
+    }
+  } else {
+    // Sort scopes by start line
+    const sortedScopes = [...scopes].sort((a, b) => {
+      const aLine = parseInt(a.scopeId.split('-').pop()) || 0;
+      const bLine = parseInt(b.scopeId.split('-').pop()) || 0;
+      return aLine - bLine;
+    });
+
+    let currentLineIdx = 0;
+
+    for (const scope of sortedScopes) {
+      const scopeStartLine = parseInt(scope.scopeId.split('-').pop()) || 0;
+
+      // Collect orphan lines before this scope
+      const linesBeforeScope = [];
+      while (currentLineIdx < orphanLines.length && orphanLines[currentLineIdx].lineNumber < scopeStartLine) {
+        linesBeforeScope.push(orphanLines[currentLineIdx]);
+        currentLineIdx++;
+      }
+
+      // Render lines before scope
+      if (linesBeforeScope.length > 0) {
+        html += \`<div class="scope-lines">\${renderScopeDiffLines(linesBeforeScope, comments)}</div>\`;
+      }
+
+      // Render the scope
+      html += renderScopeNode(scope, comments);
+    }
+
+    // Render remaining orphan lines after last scope
+    const remainingLines = orphanLines.slice(currentLineIdx);
+    if (remainingLines.length > 0) {
+      html += \`<div class="scope-lines">\${renderScopeDiffLines(remainingLines, comments)}</div>\`;
+    }
+  }
+
+  html += '</div></div>'; // Close file root scope
+  html += '</div>'; // Close scope-tree
+  viewer.innerHTML = html;
+
+  setupScopeHandlers();
+  setupScopeLineHandlers(scopedDiff.file);
+}
+
+function collectScopeLines(scopes, result) {
+  for (const scope of scopes) {
+    if (scope.lines) {
+      for (const line of scope.lines) {
+        result.push({ lineNumber: line.lineNumber, content: line.content });
+      }
+    }
+    if (scope.children) {
+      collectScopeLines(scope.children, result);
+    }
+  }
+}
+
+function renderScopeNode(scope, comments) {
+  const collapseClass = scope.isCollapsed ? 'collapsed' : '';
+  const changesClass = scope.hasChanges ? 'has-changes' : '';
+  const collapsedChangedClass = (scope.hasChanges && scope.isCollapsed) ? 'collapsed-with-changes' : '';
+  const icon = SCOPE_ICONS[scope.scopeKind] || '○';
+
+  const statsHtml = scope.hasChanges
+    ? '<span class="added">+' + scope.stats.additions + '</span> <span class="removed">-' + scope.stats.deletions + '</span>'
+    : '<span class="no-changes">unchanged</span>';
+
+  let html = \`
+    <div class="scope-node"
+         data-scope-id="\${escapeHtml(scope.scopeId)}"
+         data-depth="\${scope.depth}">
+      <div class="scope-header \${changesClass} \${collapsedChangedClass}">
+        <span class="scope-toggle \${collapseClass}">▼</span>
+        <span class="scope-icon \${scope.scopeKind}">\${icon}</span>
+        <span class="scope-name">\${escapeHtml(scope.scopeName)}</span>
+        <span class="scope-kind">\${scope.scopeKind}</span>
+        <span class="scope-stats">\${statsHtml}</span>
+      </div>
+      <div class="scope-content \${collapseClass}">
+  \`;
+
+  // Interleave lines and children by line number
+  const lines = scope.lines || [];
+  const children = scope.children || [];
+
+  if (children.length === 0) {
+    // No children - just render all lines
+    if (lines.length > 0) {
+      html += \`<div class="scope-lines">\${renderScopeDiffLines(lines, comments)}</div>\`;
+    }
+  } else {
+    // Sort children by their first line number (approximated by scopeId which contains startLine)
+    const sortedChildren = [...children].sort((a, b) => {
+      const aLine = parseInt(a.scopeId.split('-').pop()) || 0;
+      const bLine = parseInt(b.scopeId.split('-').pop()) || 0;
+      return aLine - bLine;
+    });
+
+    // Build line groups: lines before each child, then lines after last child
+    let currentLineIdx = 0;
+
+    for (const child of sortedChildren) {
+      const childStartLine = parseInt(child.scopeId.split('-').pop()) || 0;
+
+      // Collect lines before this child
+      const linesBeforeChild = [];
+      while (currentLineIdx < lines.length && lines[currentLineIdx].lineNumber < childStartLine) {
+        linesBeforeChild.push(lines[currentLineIdx]);
+        currentLineIdx++;
+      }
+
+      // Render lines before child
+      if (linesBeforeChild.length > 0) {
+        html += \`<div class="scope-lines">\${renderScopeDiffLines(linesBeforeChild, comments)}</div>\`;
+      }
+
+      // Render the child scope
+      html += renderScopeNode(child, comments);
+    }
+
+    // Render remaining lines after last child
+    const remainingLines = lines.slice(currentLineIdx);
+    if (remainingLines.length > 0) {
+      html += \`<div class="scope-lines">\${renderScopeDiffLines(remainingLines, comments)}</div>\`;
+    }
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+function renderScopeDiffLines(lines, comments) {
+  // Build comment lookup
+  const commentColorMap = new Map();
+  comments.forEach((comment, idx) => {
+    commentColorMap.set(comment.id, idx % 6);
+  });
+
+  const commentsByLine = new Map();
+  comments.forEach(comment => {
+    const startLine = comment.line;
+    const endLine = comment.endLine || comment.line;
+    for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+      if (!commentsByLine.has(lineNum)) {
+        commentsByLine.set(lineNum, []);
+      }
+      commentsByLine.get(lineNum).push({ ...comment, colorIndex: commentColorMap.get(comment.id) });
+    }
+  });
+
+  let html = '<table class="diff-table"><colgroup><col class="col-gutter"><col class="col-line-num"><col class="col-content"></colgroup>';
+
+  for (const line of lines) {
+    const lineClass = line.type;
+    const prefix = line.type === 'addition' ? '+' : line.type === 'deletion' ? '-' : ' ';
+    // ScopeLine uses lineNumber directly
+    const lineNum = line.lineNumber;
+    const isDeletion = line.type === 'deletion';
+
+    // Check for comments
+    const hasComments = !isDeletion && commentsByLine.has(lineNum);
+    const lineComments = hasComments ? commentsByLine.get(lineNum) : [];
+    const primaryComments = lineComments.filter(c => (c.endLine || c.line) === lineNum);
+
+    // Build range indicators
+    let rangeIndicators = '';
+    if (hasComments) {
+      lineComments.forEach((c) => {
+        const isStart = c.line === lineNum;
+        const isEnd = (c.endLine || c.line) === lineNum;
+        const isSingle = isStart && isEnd;
+        let posClass = isSingle ? 'single' : isStart ? 'start' : isEnd ? 'end' : 'middle';
+        const dotMarker = isEnd ? '<span class="end-dot color-' + c.colorIndex + '">●</span>' : '';
+        rangeIndicators += '<span class="range-line range-' + posClass + ' color-' + c.colorIndex + '" style="left: ' + (4 + c.colorIndex * 3) + 'px">' + dotMarker + '</span>';
+      });
+    }
+
+    const markerClass = hasComments ? 'has-comment' : '';
+    const gutterAttrs = primaryComments.length > 0 ? ' data-end-lines="' + lineNum + '" onclick="toggleInlineComment(this)"' : '';
+
+    // Use pre-computed highlighted content if available
+    const highlightedContent = scopedDiffHighlightMap.get(lineNum) || escapeHtml(line.content);
+
+    html += \`
+      <tr class="diff-line \${lineClass}" data-line="\${lineNum}">
+        <td class="diff-gutter \${markerClass}"\${gutterAttrs}>
+          \${rangeIndicators}
+        </td>
+        <td class="diff-line-num">\${lineNum}</td>
+        <td class="diff-line-content shiki" data-prefix="\${prefix}">\${highlightedContent}</td>
+      </tr>
+    \`;
+
+    // Add inline comment row
+    if (primaryComments.length > 0) {
+      html += \`
+        <tr class="inline-comment-row" data-line="\${lineNum}">
+          <td colspan="3">
+            <div class="inline-comments">
+              \${primaryComments.map(c => {
+                const isPending = !c.isSubmitted;
+                const statusClass = isPending ? 'pending' : 'submitted';
+                return \`
+                  <div class="inline-comment-box \${statusClass} color-\${c.colorIndex}" data-comment-id="\${c.id}">
+                    <div class="inline-comment-header" onclick="toggleInlineComment(\${lineNum})" style="cursor: pointer;">
+                      <span class="comment-author">Comment</span>
+                      \${isPending ? \`
+                        <div class="inline-comment-actions" onclick="event.stopPropagation()">
+                          <button class="btn-icon" onclick="startInlineEdit('\${c.id}')" title="Edit">✎</button>
+                          <button class="btn-icon btn-danger" onclick="deleteComment('\${c.id}')" title="Delete">🗑</button>
+                        </div>
+                      \` : \`
+                        <span class="submitted-label">submitted</span>
+                      \`}
+                    </div>
+                    <div class="inline-comment-body" id="inline-body-\${c.id}">
+                      \${escapeHtml(c.text)}
+                    </div>
+                    <div class="inline-comment-edit" id="inline-edit-\${c.id}" style="display: none;">
+                      <textarea class="comment-textarea">\${escapeHtml(c.text)}</textarea>
+                      <div class="comment-form-actions">
+                        <button class="btn-secondary" onclick="cancelInlineEdit('\${c.id}')">Cancel</button>
+                        <button onclick="saveInlineEdit('\${c.id}')">Save</button>
+                      </div>
+                    </div>
+                  </div>
+                \`;
+              }).join('')}
+            </div>
+          </td>
+        </tr>
+      \`;
+    }
+  }
+
+  html += '</table>';
+  return html;
+}
+
+function setupScopeHandlers() {
+  // Scope header click handler
+  document.querySelectorAll('.scope-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      e.stopPropagation();
+
+      const node = header.closest('.scope-node');
+      const scopeId = node?.dataset.scopeId;
+
+      if (scopeId) {
+        vscode.postMessage({
+          type: 'toggleScopeCollapse',
+          scopeId
+        });
+      }
+    });
+  });
+
+  // Expand/Collapse all buttons
+  document.querySelectorAll('.scope-control-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const action = btn.dataset.action;
+
+      if (action === 'expand-all') {
+        vscode.postMessage({ type: 'expandAllScopes' });
+      } else if (action === 'collapse-all') {
+        vscode.postMessage({ type: 'collapseAllScopes' });
+      }
+    });
+  });
+}
+
+function setupScopeLineHandlers(currentFile) {
+  const viewer = document.getElementById('diff-viewer');
+
+  viewer.onclick = (e) => {
+    const btn = e.target.closest('.line-comment-btn');
+    if (btn) {
+      selectedLineNum = btn.dataset.line;
+      selectedLineElement = btn.closest('tr');
+      selectionStartLine = null;
+      selectionEndLine = null;
+      showInlineCommentForm(currentFile);
+    }
+  };
+
+  viewer.onmousedown = (e) => {
+    let row = e.target.closest('.diff-line');
+    if (!row || e.target.closest('.line-comment-btn') || e.target.closest('.inline-comment-form')) return;
+    if (row.classList.contains('deletion')) return;
+    const lineNum = row.dataset.line;
+    if (!lineNum) return;
+    isSelecting = true;
+    selectionStartLine = parseInt(lineNum);
+    selectionEndLine = parseInt(lineNum);
+    selectionStartRow = row;
+    clearLineSelection();
+    row.classList.add('line-selected', 'selection-start', 'selection-end');
+  };
+
+  viewer.onmousemove = (e) => {
+    if (!isSelecting) return;
+    const row = e.target.closest('.diff-line');
+    if (!row) return;
+    const lineNum = row.dataset.line;
+    if (!lineNum) return;
+    selectionEndLine = parseInt(lineNum);
+    selectionEndRow = row;
+    updateLineSelection();
+  };
+
+  document.onmouseup = (e) => {
+    if (!isSelecting) return;
+    isSelecting = false;
+    if (selectionStartLine !== null && selectionEndLine !== null) {
+      const startLine = Math.min(selectionStartLine, selectionEndLine);
+      const endLine = Math.max(selectionStartLine, selectionEndLine);
+      if (startLine !== endLine || e.target.closest('.diff-line-content')) {
+        selectedLineNum = startLine;
+        const lastSelectedRow = document.querySelector('.diff-line.selection-end');
+        if (lastSelectedRow) {
+          selectedLineElement = lastSelectedRow;
+        }
+        showInlineCommentForm(currentFile, startLine, endLine);
+      }
+    }
+    selectionStartRow = null;
+    selectionEndRow = null;
+  };
+}
+
+function scrollToLineInScopedDiff(line) {
+  // Request scope expansion first
+  vscode.postMessage({
+    type: 'expandScopeForLine',
+    line
+  });
+
+  // Then scroll after a short delay for DOM update
+  setTimeout(() => {
+    const lineEl = document.querySelector('.diff-line[data-line="' + line + '"]');
+    if (lineEl) {
+      lineEl.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+
+      lineEl.classList.add('highlight-target');
+      setTimeout(() => lineEl.classList.remove('highlight-target'), 2000);
+    }
+  }, 150);
+}
+
 // ===== Diff Rendering =====
-async function renderDiff(diff, selectedFile, viewMode, comments = [], hnStories = [], hnFeedStatus = 'idle', hnFeedError = null) {
+async function renderDiff(diff, selectedFile, viewMode, comments = [], hasScopedDiff = false, hnStories = [], hnFeedStatus = 'idle', hnFeedError = null) {
   const header = document.querySelector('.diff-header-title');
   const stats = document.getElementById('diff-stats');
   const viewer = document.getElementById('diff-viewer');
@@ -1003,9 +1501,14 @@ async function renderDiff(diff, selectedFile, viewMode, comments = [], hnStories
       return;
     }
   } else {
+    // Non-markdown files: show Scope toggle if scopedDiff is available
+    const toggleHtml = hasScopedDiff
+      ? '<div class="view-mode-toggle"><button class="toggle-btn" onclick="toggleDiffViewMode()">Scope</button></div>'
+      : '';
     stats.innerHTML = \`
       <span class="stat-added">+\${diff.stats.additions}</span>
       <span class="stat-removed">-\${diff.stats.deletions}</span>
+      \${toggleHtml}
     \`;
   }
 

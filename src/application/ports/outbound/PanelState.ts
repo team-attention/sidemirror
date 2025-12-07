@@ -1,7 +1,8 @@
-import { DiffResult, DiffChunk } from '../../../domain/entities/Diff';
+import { DiffResult, DiffChunk, DiffLine } from '../../../domain/entities/Diff';
+import { ScopeLine } from '../../../domain/entities/ScopedDiff';
 import { ScopeInfo } from './ISymbolPort';
 
-export type DiffViewMode = 'diff' | 'preview';
+export type DiffViewMode = 'diff' | 'preview' | 'scope';
 
 export type HNFeedStatus = 'idle' | 'loading' | 'error' | 'success';
 
@@ -67,6 +68,33 @@ export interface DiffDisplayState {
 }
 
 /**
+ * Display state for a scope chunk in scoped diff view
+ */
+export interface ScopedChunkDisplay {
+    scopeId: string;
+    scopeName: string;
+    scopeKind: string;
+    fullName: string;
+    hasChanges: boolean;
+    isCollapsed: boolean;
+    lines: ScopeLine[];
+    stats: { additions: number; deletions: number };
+    children: ScopedChunkDisplay[];
+    depth: number;
+}
+
+/**
+ * Display state for scoped diff view
+ */
+export interface ScopedDiffDisplayState {
+    file: string;
+    scopes: ScopedChunkDisplay[];
+    orphanLines: ScopeLine[];
+    stats: { additions: number; deletions: number };
+    hasScopeData: boolean;
+}
+
+/**
  * Comment information for panel display
  */
 export interface CommentInfo {
@@ -114,6 +142,7 @@ export interface PanelState {
     showUncommitted: boolean;
     selectedFile: string | null;
     diff: DiffDisplayState | null;
+    scopedDiff: ScopedDiffDisplayState | null;
     comments: CommentInfo[];
     aiStatus: AIStatus;
     isTreeView: boolean;
@@ -137,6 +166,7 @@ export function createInitialPanelState(): PanelState {
         showUncommitted: false,
         selectedFile: null,
         diff: null,
+        scopedDiff: null,
         comments: [],
         aiStatus: { active: false },
         isTreeView: true,

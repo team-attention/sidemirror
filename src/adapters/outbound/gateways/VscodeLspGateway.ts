@@ -42,6 +42,103 @@ export class VscodeLspGateway implements ISymbolPort {
         }
     }
 
+    async getAllFileSymbols(filePath: string): Promise<ScopeInfo[]> {
+        const uri = vscode.Uri.file(filePath);
+
+        try {
+            const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+                'vscode.executeDocumentSymbolProvider',
+                uri
+            );
+
+            if (!symbols || symbols.length === 0) {
+                return [];
+            }
+
+            return this.flattenSymbols(symbols);
+        } catch (error) {
+            console.error('[Sidecar] Failed to get document symbols:', error);
+            return [];
+        }
+    }
+
+    private flattenSymbols(
+        symbols: vscode.DocumentSymbol[],
+        containerName?: string
+    ): ScopeInfo[] {
+        const result: ScopeInfo[] = [];
+
+        for (const symbol of symbols) {
+            // Filter to relevant symbol kinds for scoped diff
+            if (!this.isRelevantSymbolKind(symbol.kind)) {
+                // Still process children for non-relevant symbols
+                if (symbol.children && symbol.children.length > 0) {
+                    result.push(...this.flattenSymbols(symbol.children, containerName));
+                }
+                continue;
+            }
+
+            // Skip anonymous/arrow functions and callbacks
+            if (this.isAnonymousOrCallback(symbol)) {
+                if (symbol.children && symbol.children.length > 0) {
+                    result.push(...this.flattenSymbols(symbol.children, containerName));
+                }
+                continue;
+            }
+
+            const scopeInfo: ScopeInfo = {
+                name: symbol.name,
+                containerName,
+                kind: this.symbolKindToString(symbol.kind),
+                startLine: symbol.range.start.line + 1, // 1-indexed
+                endLine: symbol.range.end.line + 1,
+            };
+
+            result.push(scopeInfo);
+
+            if (symbol.children && symbol.children.length > 0) {
+                result.push(...this.flattenSymbols(symbol.children, symbol.name));
+            }
+        }
+
+        return result;
+    }
+
+    private isRelevantSymbolKind(kind: vscode.SymbolKind): boolean {
+        const relevant = [
+            vscode.SymbolKind.Class,
+            vscode.SymbolKind.Method,
+            vscode.SymbolKind.Function,
+            vscode.SymbolKind.Constructor,
+            vscode.SymbolKind.Interface,
+            vscode.SymbolKind.Enum,
+            vscode.SymbolKind.Module,
+            vscode.SymbolKind.Namespace,
+        ];
+        return relevant.includes(kind);
+    }
+
+    private isAnonymousOrCallback(symbol: vscode.DocumentSymbol): boolean {
+        // Skip anonymous functions, arrow functions, callbacks
+        const name = symbol.name.toLowerCase();
+
+        // Anonymous or unnamed
+        if (!name || name === '<function>' || name === '<anonymous>') {
+            return true;
+        }
+
+        // Arrow function callbacks (typically short names or contain arrow indicators)
+        if (symbol.kind === vscode.SymbolKind.Function) {
+            // Skip if it looks like a callback (e.g., single letter params, arrow syntax indicators)
+            // These are typically nested inside methods and not top-level named functions
+            if (name.length <= 2 || name.startsWith('(')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private findEnclosingSymbol(
         symbols: vscode.DocumentSymbol[],
         line: number,

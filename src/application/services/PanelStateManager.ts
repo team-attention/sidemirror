@@ -7,6 +7,8 @@ import {
     DiffViewMode,
     DraftComment,
     HNStoryInfo,
+    ScopedDiffDisplayState,
+    ScopedChunkDisplay,
     createInitialPanelState,
 } from '../ports/outbound/PanelState';
 import { IPanelStateManager } from './IPanelStateManager';
@@ -147,17 +149,26 @@ export class PanelStateManager implements IPanelStateManager {
 
     // ===== Diff operations =====
 
-    showDiff(diff: DiffDisplayState): void {
+    showDiff(diff: DiffDisplayState, scopedDiff?: ScopedDiffDisplayState): void {
         // Auto-switch to preview mode for markdown files
         const isMarkdown = diff.file.endsWith('.md') ||
             diff.file.endsWith('.markdown') ||
             diff.file.endsWith('.mdx');
 
+        // Determine view mode: markdown -> preview, has scopedDiff -> scope, else diff
+        let viewMode: DiffViewMode = 'diff';
+        if (isMarkdown) {
+            viewMode = 'preview';
+        } else if (scopedDiff && scopedDiff.hasScopeData) {
+            viewMode = 'scope';
+        }
+
         this.state = {
             ...this.state,
             diff,
+            scopedDiff: scopedDiff || null,
             selectedFile: diff.file,
-            diffViewMode: isMarkdown ? 'preview' : this.state.diffViewMode,
+            diffViewMode: viewMode,
         };
         this.render();
     }
@@ -223,6 +234,142 @@ export class PanelStateManager implements IPanelStateManager {
             },
         };
         this.render();
+    }
+
+    // ===== Scoped diff operations =====
+
+    clearScopedDiff(): void {
+        this.state = {
+            ...this.state,
+            scopedDiff: null,
+        };
+        this.render();
+    }
+
+    toggleScopeCollapse(scopeId: string): void {
+        if (!this.state.scopedDiff) return;
+
+        const scope = this.findScopeById(scopeId, this.state.scopedDiff.scopes);
+        if (!scope) return;
+
+        const newScopes = this.updateScopeCollapse(
+            this.state.scopedDiff.scopes,
+            scopeId,
+            !scope.isCollapsed
+        );
+
+        this.state = {
+            ...this.state,
+            scopedDiff: { ...this.state.scopedDiff, scopes: newScopes },
+        };
+        this.render();
+    }
+
+    expandAllScopes(): void {
+        if (!this.state.scopedDiff) return;
+
+        const newScopes = this.setAllCollapseStates(
+            this.state.scopedDiff.scopes,
+            false
+        );
+
+        this.state = {
+            ...this.state,
+            scopedDiff: { ...this.state.scopedDiff, scopes: newScopes },
+        };
+        this.render();
+    }
+
+    collapseAllScopes(): void {
+        if (!this.state.scopedDiff) return;
+
+        // Collapse all scopes (including changed ones)
+        const newScopes = this.setAllCollapseStates(
+            this.state.scopedDiff.scopes,
+            true
+        );
+
+        this.state = {
+            ...this.state,
+            scopedDiff: { ...this.state.scopedDiff, scopes: newScopes },
+        };
+        this.render();
+    }
+
+    expandScopeChain(scopeId: string): void {
+        // Expand scope and all parent scopes (for comment navigation)
+        if (!this.state.scopedDiff) return;
+
+        const chain = this.findScopeChain(scopeId, this.state.scopedDiff.scopes);
+        let newScopes = this.state.scopedDiff.scopes;
+
+        for (const id of chain) {
+            newScopes = this.updateScopeCollapse(newScopes, id, false);
+        }
+
+        this.state = {
+            ...this.state,
+            scopedDiff: { ...this.state.scopedDiff, scopes: newScopes },
+        };
+        this.render();
+    }
+
+    private findScopeById(
+        scopeId: string,
+        scopes: ScopedChunkDisplay[]
+    ): ScopedChunkDisplay | null {
+        for (const scope of scopes) {
+            if (scope.scopeId === scopeId) return scope;
+            const found = this.findScopeById(scopeId, scope.children);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    private updateScopeCollapse(
+        scopes: ScopedChunkDisplay[],
+        scopeId: string,
+        isCollapsed: boolean
+    ): ScopedChunkDisplay[] {
+        return scopes.map((scope) => {
+            if (scope.scopeId === scopeId) {
+                return { ...scope, isCollapsed };
+            }
+            return {
+                ...scope,
+                children: this.updateScopeCollapse(scope.children, scopeId, isCollapsed),
+            };
+        });
+    }
+
+    private setAllCollapseStates(
+        scopes: ScopedChunkDisplay[],
+        collapsed: boolean,
+        predicate?: (scope: ScopedChunkDisplay) => boolean
+    ): ScopedChunkDisplay[] {
+        return scopes.map((scope) => ({
+            ...scope,
+            isCollapsed: predicate ? (predicate(scope) ? collapsed : scope.isCollapsed) : collapsed,
+            children: this.setAllCollapseStates(scope.children, collapsed, predicate),
+        }));
+    }
+
+    private findScopeChain(
+        targetId: string,
+        scopes: ScopedChunkDisplay[],
+        currentChain: string[] = []
+    ): string[] {
+        for (const scope of scopes) {
+            const newChain = [...currentChain, scope.scopeId];
+            if (scope.scopeId === targetId) {
+                return newChain;
+            }
+            const found = this.findScopeChain(targetId, scope.children, newChain);
+            if (found.length > 0) {
+                return found;
+            }
+        }
+        return [];
     }
 
     // ===== Comment operations =====

@@ -1,4 +1,4 @@
-import { PanelState, FileInfo, CommentInfo, AIStatus, DiffDisplayState, DiffViewMode, DraftComment, HNStoryInfo } from '../ports/outbound/PanelState';
+import { PanelState, FileInfo, CommentInfo, AIStatus, DiffDisplayState, DiffViewMode, DraftComment, ScopedDiffDisplayState, HNStoryInfo } from '../ports/outbound/PanelState';
 
 /**
  * Panel state manager - manages UI state and triggers rendering
@@ -26,13 +26,20 @@ export interface IPanelStateManager {
     setShowUncommitted(show: boolean): void;
 
     // Diff operations
-    showDiff(diff: DiffDisplayState): void;
+    showDiff(diff: DiffDisplayState, scopedDiff?: ScopedDiffDisplayState): void;
     clearDiff(): void;
 
     // Chunk collapse operations
     toggleChunkCollapse(chunkIndex: number): void;
     collapseAllChunks(): void;
     expandAllChunks(): void;
+
+    // Scoped diff operations
+    clearScopedDiff(): void;
+    toggleScopeCollapse(scopeId: string): void;
+    expandAllScopes(): void;
+    collapseAllScopes(): void;
+    expandScopeChain(scopeId: string): void;
 
     // Comment operations
     addComment(comment: CommentInfo): void;

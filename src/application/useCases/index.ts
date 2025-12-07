@@ -1,6 +1,7 @@
 export { AddCommentUseCase } from './AddCommentUseCase';
 export { SubmitCommentsUseCase } from './SubmitCommentsUseCase';
 export { GenerateDiffUseCase } from './GenerateDiffUseCase';
+export { GenerateScopedDiffUseCase } from './GenerateScopedDiffUseCase';
 export { CaptureSnapshotsUseCase } from './CaptureSnapshotsUseCase';
 export { EditCommentUseCase } from './EditCommentUseCase';
 export { DeleteCommentUseCase } from './DeleteCommentUseCase';

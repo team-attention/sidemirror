@@ -1,14 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { PanelState, DiffDisplayState, ChunkDisplayInfo } from '../../../application/ports/outbound/PanelState';
+import { PanelState, DiffDisplayState, ChunkDisplayInfo, ScopedDiffDisplayState, ScopedChunkDisplay } from '../../../application/ports/outbound/PanelState';
 import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
+import { IGenerateScopedDiffUseCase } from '../../../application/ports/inbound/IGenerateScopedDiffUseCase';
 import { IAddCommentUseCase } from '../../../application/ports/inbound/IAddCommentUseCase';
 import { IEditCommentUseCase } from '../../../application/ports/inbound/IEditCommentUseCase';
 import { IDeleteCommentUseCase } from '../../../application/ports/inbound/IDeleteCommentUseCase';
 import { IFetchHNStoriesUseCase } from '../../../application/ports/inbound/IFetchHNStoriesUseCase';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 import { ISymbolPort, ScopeInfo } from '../../../application/ports/outbound/ISymbolPort';
-import { DiffResult, DiffChunk } from '../../../domain/entities/Diff';
+import { DiffResult, DiffChunk, DiffLine } from '../../../domain/entities/Diff';
+import { ScopedDiffResult, ScopedChunk } from '../../../domain/entities/ScopedDiff';
 import { getWebviewContent } from './webview';
 
 /**
@@ -35,6 +37,7 @@ export class SidecarPanelAdapter {
 
     // Inbound handlers (webview → application)
     private generateDiffUseCase: IGenerateDiffUseCase | undefined;
+    private generateScopedDiffUseCase: IGenerateScopedDiffUseCase | undefined;
     private addCommentUseCase: IAddCommentUseCase | undefined;
     private editCommentUseCase: IEditCommentUseCase | undefined;
     private deleteCommentUseCase: IDeleteCommentUseCase | undefined;
@@ -141,8 +144,24 @@ export class SidecarPanelAdapter {
                         break;
                     case 'toggleDiffViewMode':
                         if (this.panelStateManager) {
-                            const current = this.panelStateManager.getState().diffViewMode;
-                            this.panelStateManager.setDiffViewMode(current === 'preview' ? 'diff' : 'preview');
+                            const state = this.panelStateManager.getState();
+                            const current = state.diffViewMode;
+                            const selectedFile = state.selectedFile || '';
+                            const isMarkdown = selectedFile.endsWith('.md') ||
+                                selectedFile.endsWith('.markdown') ||
+                                selectedFile.endsWith('.mdx');
+
+                            if (isMarkdown) {
+                                // Markdown: toggle between diff and preview
+                                this.panelStateManager.setDiffViewMode(
+                                    current === 'preview' ? 'diff' : 'preview'
+                                );
+                            } else {
+                                // Non-markdown: toggle between diff and scope
+                                this.panelStateManager.setDiffViewMode(
+                                    current === 'scope' ? 'diff' : 'scope'
+                                );
+                            }
                         }
                         break;
                     case 'setSearchQuery':
@@ -180,6 +199,18 @@ export class SidecarPanelAdapter {
                     case 'openHNComments':
                         await this.handleOpenHNComments(message.storyId);
                         break;
+                    case 'toggleScopeCollapse':
+                        this.panelStateManager?.toggleScopeCollapse(message.scopeId);
+                        break;
+                    case 'expandAllScopes':
+                        this.panelStateManager?.expandAllScopes();
+                        break;
+                    case 'collapseAllScopes':
+                        this.panelStateManager?.collapseAllScopes();
+                        break;
+                    case 'expandScopeForLine':
+                        this.handleExpandScopeForLine(message.line);
+                        break;
                 }
             },
             null,
@@ -198,7 +229,8 @@ export class SidecarPanelAdapter {
         symbolPort?: ISymbolPort,
         editCommentUseCase?: IEditCommentUseCase,
         deleteCommentUseCase?: IDeleteCommentUseCase,
-        fetchHNStoriesUseCase?: IFetchHNStoriesUseCase
+        fetchHNStoriesUseCase?: IFetchHNStoriesUseCase,
+        generateScopedDiffUseCase?: IGenerateScopedDiffUseCase
     ): void {
         this.generateDiffUseCase = generateDiffUseCase;
         this.addCommentUseCase = addCommentUseCase;
@@ -208,6 +240,7 @@ export class SidecarPanelAdapter {
         this.editCommentUseCase = editCommentUseCase;
         this.deleteCommentUseCase = deleteCommentUseCase;
         this.fetchHNStoriesUseCase = fetchHNStoriesUseCase;
+        this.generateScopedDiffUseCase = generateScopedDiffUseCase;
     }
 
     /**
@@ -222,27 +255,47 @@ export class SidecarPanelAdapter {
     private async handleSelectFile(file: string): Promise<void> {
         if (!file || !this.generateDiffUseCase || !this.panelStateManager) return;
 
+        const isMarkdown = file.endsWith('.md') || file.endsWith('.markdown') || file.endsWith('.mdx');
+
+        // Always fetch regular diff first
         const diffResult = await this.generateDiffUseCase.execute(file);
 
         if (diffResult === null) {
             this.panelStateManager.removeSessionFile(file);
-        } else {
-            const scopes = await this.prefetchScopes(file, diffResult);
-            const displayState = this.createDiffDisplayState(diffResult, scopes);
-
-            // For markdown files, fetch full content for preview
-            const isMarkdown = file.endsWith('.md') || file.endsWith('.markdown') || file.endsWith('.mdx');
-            if (isMarkdown) {
-                const fullContent = await this.readFullFileContent(file);
-                if (fullContent !== null) {
-                    displayState.newFileContent = fullContent;
-                    displayState.changedLineNumbers = this.extractChangedLineNumbers(diffResult);
-                    displayState.deletions = this.extractDeletions(diffResult);
-                }
-            }
-
-            this.panelStateManager.showDiff(displayState);
+            return;
         }
+
+        const scopes = await this.prefetchScopes(file, diffResult);
+        const displayState = this.createDiffDisplayState(diffResult, scopes);
+
+        // For markdown files, fetch full content for preview
+        if (isMarkdown) {
+            const fullContent = await this.readFullFileContent(file);
+            if (fullContent !== null) {
+                displayState.newFileContent = fullContent;
+                displayState.changedLineNumbers = this.extractChangedLineNumbers(diffResult);
+                displayState.deletions = this.extractDeletions(diffResult);
+            }
+            // Markdown: no scoped diff, just diff/preview toggle
+            this.panelStateManager.showDiff(displayState);
+            return;
+        }
+
+        // For non-markdown files, also try to get scoped diff
+        let scopedDisplayState = null;
+        if (this.generateScopedDiffUseCase) {
+            try {
+                const scopedResult = await this.generateScopedDiffUseCase.execute(file);
+                if (scopedResult && scopedResult.hasScopeData) {
+                    scopedDisplayState = this.createScopedDiffDisplayState(scopedResult);
+                }
+            } catch (error) {
+                console.warn('[Sidecar] Scoped diff failed:', error);
+            }
+        }
+
+        // Show both diff and scopedDiff (if available)
+        this.panelStateManager.showDiff(displayState, scopedDisplayState ?? undefined);
     }
 
     private async readFullFileContent(relativePath: string): Promise<string | null> {
@@ -415,6 +468,71 @@ export class SidecarPanelAdapter {
 
         const uniqueNames = [...new Set(scopeNames)];
         return uniqueNames.join(', ');
+    }
+
+    // ===== Scoped Diff helpers =====
+
+    private createScopedDiffDisplayState(result: ScopedDiffResult): ScopedDiffDisplayState {
+        const scopes = this.convertToDisplayScopes(result.root, 0);
+
+        return {
+            file: result.file,
+            scopes,
+            orphanLines: result.orphanLines,
+            stats: result.stats,
+            hasScopeData: result.hasScopeData,
+        };
+    }
+
+    private convertToDisplayScopes(
+        chunks: ScopedChunk[],
+        depth: number
+    ): ScopedChunkDisplay[] {
+        return chunks.map((chunk) => {
+            const scopeId = `${chunk.scope.fullName}-${chunk.scope.startLine}`;
+
+            return {
+                scopeId,
+                scopeName: chunk.scope.displayName,
+                scopeKind: chunk.scope.kind,
+                fullName: chunk.scope.fullName,
+                hasChanges: chunk.hasChanges,
+                isCollapsed: !chunk.hasChanges, // Default: collapsed if no changes
+                lines: chunk.lines,
+                stats: chunk.stats,
+                children: this.convertToDisplayScopes(chunk.children, depth + 1),
+                depth,
+            };
+        });
+    }
+
+    private handleExpandScopeForLine(line: number): void {
+        if (!this.panelStateManager?.getState().scopedDiff) return;
+
+        const scopeId = this.findScopeIdForLine(
+            line,
+            this.panelStateManager.getState().scopedDiff!.scopes
+        );
+
+        if (scopeId) {
+            this.panelStateManager.expandScopeChain(scopeId);
+        }
+    }
+
+    private findScopeIdForLine(
+        line: number,
+        scopes: ScopedChunkDisplay[]
+    ): string | null {
+        for (const scope of scopes) {
+            // Check if line is in this scope's lines
+            const hasLine = scope.lines.some((l) => l.lineNumber === line);
+            if (hasLine) {
+                // Check children first for innermost scope
+                const childId = this.findScopeIdForLine(line, scope.children);
+                return childId || scope.scopeId;
+            }
+        }
+        return null;
     }
 
     private async handleAddComment(message: {
