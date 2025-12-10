@@ -134,6 +134,22 @@ export function renderTable(rows: string[]): string {
 }
 
 /**
+ * Check if a line is an HTML tag or contains HTML elements
+ */
+function isHtmlLine(line: string): boolean {
+  const trimmed = line.trim();
+  // Self-closing tags: <br />, <img ... />, <hr />
+  if (/^<\w+[^>]*\/>\s*$/.test(trimmed)) return true;
+  // Opening HTML tags: <div>, <table>, <tr>, <td>, <img>, <a>, <details>, <summary>
+  if (/^<(div|table|tr|td|th|thead|tbody|img|a|br|hr|details|summary|center|span)\b[^>]*>/.test(trimmed)) return true;
+  // Closing HTML tags: </div>, </table>, etc.
+  if (/^<\/(div|table|tr|td|th|thead|tbody|a|details|summary|center|span)>/.test(trimmed)) return true;
+  // Lines that are primarily HTML (start with < and end with >)
+  if (/^<[^>]+>.*<\/[^>]+>$/.test(trimmed)) return true;
+  return false;
+}
+
+/**
  * Render markdown to HTML
  */
 export async function renderMarkdown(text: string): Promise<string> {
@@ -294,6 +310,13 @@ export async function renderMarkdown(text: string): Promise<string> {
       continue;
     }
 
+    // Check if line contains HTML - pass through without escaping
+    if (isHtmlLine(line)) {
+      closeAllLists();
+      processedLines.push(line);
+      continue;
+    }
+
     closeAllLists();
     processedLines.push(processInline(line));
   }
@@ -318,6 +341,11 @@ export async function renderMarkdown(text: string): Promise<string> {
     '<h1', '<h2', '<h3', '<h4', '<h5', '<h6',
     '<ul', '<ol', '<li', '<pre', '<hr', '<blockquote',
     '</ul', '</ol', '</li', '</blockquote', '<table', '</table',
+    '<div', '</div', '<img', '<br', '<a ', '</a>',
+    '<details', '</details', '<summary', '</summary',
+    '<center', '</center', '<span', '</span',
+    '<tr', '</tr', '<td', '</td', '<th', '</th',
+    '<thead', '</thead', '<tbody', '</tbody',
   ];
   const finalLines = html.split('\n');
   let result = '';
