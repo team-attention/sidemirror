@@ -9,6 +9,7 @@ import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseC
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
 import { FileWatchController } from './adapters/inbound/controllers/FileWatchController';
+import { ClaudeCodeConfigController } from './adapters/inbound/controllers/ClaudeCodeConfigController';
 
 // Adapters - Inbound (UI)
 import { SidecarPanelAdapter } from './adapters/inbound/ui/SidecarPanelAdapter';
@@ -81,6 +82,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Activate Controllers
     aiDetectionController.activate(context);
     fileWatchController.activate(context);
+
+    // Prompt Claude Code terminal mode configuration
+    const claudeCodeConfigController = new ClaudeCodeConfigController();
+    claudeCodeConfigController.promptTerminalMode();
 
     // Register fileWatchController dispose for debounce timer cleanup
     context.subscriptions.push({ dispose: () => fileWatchController.dispose() });
