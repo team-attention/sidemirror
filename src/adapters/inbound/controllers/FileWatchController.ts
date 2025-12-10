@@ -7,6 +7,7 @@ import { SessionContext } from '../../../application/ports/outbound/SessionConte
 import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { DiffDisplayState, ChunkDisplayInfo, FileInfo } from '../../../application/ports/outbound/PanelState';
 import { DiffResult } from '../../../domain/entities/Diff';
+import { GitExtension, GitAPI, Repository, Change, Status } from '../../../types/git';
 
 /** Pending debounced event data */
 interface DebouncedEventData {
@@ -79,6 +80,18 @@ export class FileWatchController {
     /** 모든 활성 세션 참조 */
     private sessions: Map<string, SessionContext> | undefined;
 
+    // ===== Git Extension API =====
+    private gitAPI: GitAPI | undefined;
+    private repository: Repository | undefined;
+    private repositoryStateSubscription: vscode.Disposable | undefined;
+    private gitExtensionAvailable: boolean = false;
+    /** Deduplication map for rapid git state events */
+    private lastProcessedChanges: Map<string, number> = new Map();
+    /** Watchers for whitelisted file patterns */
+    private whitelistWatchers: vscode.FileSystemWatcher[] = [];
+    /** Extension context for config change handling */
+    private extensionContext: vscode.ExtensionContext | undefined;
+
     // ===== Debug metrics =====
     private eventCount = 0;
     private eventCountWindow = new CircularBuffer<number>(1000); // timestamps of recent events
@@ -119,12 +132,12 @@ export class FileWatchController {
 
         const memUsage = process.memoryUsage();
         const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
-        const rssMB = (memUsage.rss / 1024 / 1024).toFixed(1);
 
-        this.log(`📊 STATS: events/sec=${eventsPerSecond}, pending=${this.pendingEvents}, maxPending=${this.maxPendingEvents}, processed=${this.processedCount}, heap=${heapMB}MB, rss=${rssMB}MB`);
+        const mode = this.getWatchMode();
+        this.log(`[Stats] rate=${eventsPerSecond}/s, pending=${this.pendingEvents}, maxPending=${this.maxPendingEvents}, total=${this.eventCount}, mode=${mode}, heap=${heapMB}MB`);
 
         if (recentCount > 50) {
-            this.log(`⚠️ WARNING: High event rate detected! ${recentCount} events in last 10 seconds`);
+            this.log(`WARNING: High event rate! ${recentCount} events in last 10 seconds`);
         }
 
         this.lastStatsLog = now;
@@ -149,6 +162,13 @@ export class FileWatchController {
 
     setGitPort(gitPort: IGitPort): void {
         this.gitPort = gitPort;
+    }
+
+    /**
+     * Get the current file watch mode.
+     */
+    getWatchMode(): 'git+whitelist' | 'whitelist-only' {
+        return this.gitExtensionAvailable ? 'git+whitelist' : 'whitelist-only';
     }
 
     private initialize(): void {
@@ -196,14 +216,279 @@ export class FileWatchController {
         this.log(`Debounce config loaded: ${this.debounceMs}ms`);
     }
 
+    /**
+     * Initialize Git Extension API for efficient file change tracking.
+     * Falls back to whitelist-only mode if git extension unavailable.
+     */
+    private async initGitExtension(): Promise<void> {
+        const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+
+        if (!gitExtension) {
+            this.gitExtensionAvailable = false;
+            this.log('Git extension not found, using whitelist-only mode');
+            return;
+        }
+
+        if (!gitExtension.isActive) {
+            try {
+                await gitExtension.activate();
+            } catch (error) {
+                this.gitExtensionAvailable = false;
+                this.log('Failed to activate git extension, using whitelist-only mode');
+                this.logError('initGitExtension', error);
+                return;
+            }
+        }
+
+        this.gitAPI = gitExtension.exports.getAPI(1);
+
+        if (!this.gitAPI) {
+            this.gitExtensionAvailable = false;
+            this.log('Git API not available, using whitelist-only mode');
+            return;
+        }
+
+        // Find repository for workspace
+        this.repository = this.gitAPI.repositories.find(
+            repo => repo.rootUri.fsPath === this.workspaceRoot
+        );
+
+        if (!this.repository) {
+            this.gitExtensionAvailable = false;
+            this.log(`No git repository found for: ${this.workspaceRoot}`);
+            this.log('Using whitelist-only mode');
+            // Listen for repository to be opened later
+            this.gitAPI.onDidOpenRepository(repo => {
+                if (repo.rootUri.fsPath === this.workspaceRoot) {
+                    this.repository = repo;
+                    this.gitExtensionAvailable = true;
+                    this.setupGitStateWatcher();
+                    this.log('Git repository detected, enabled git-based file watching');
+                }
+            });
+            return;
+        }
+
+        this.gitExtensionAvailable = true;
+        this.log(`Git extension initialized: ${this.repository.rootUri.fsPath}`);
+    }
+
+    /**
+     * Subscribe to repository state changes for efficient file change tracking.
+     */
+    private setupGitStateWatcher(context?: vscode.ExtensionContext): void {
+        if (!this.repository) return;
+
+        this.repositoryStateSubscription = this.repository.state.onDidChange(() => {
+            this.handleGitStateChange();
+        });
+
+        if (context) {
+            context.subscriptions.push(this.repositoryStateSubscription);
+        }
+        this.log('Git state watcher subscribed');
+    }
+
+    /**
+     * Handle git repository state change - process changed files.
+     * Deduplicates files that appear in both workingTreeChanges and indexChanges.
+     */
+    private async handleGitStateChange(): Promise<void> {
+        if (!this.repository) return;
+
+        const state = this.repository.state;
+        const changes = [...state.workingTreeChanges, ...state.indexChanges];
+
+        // Deduplicate by file path
+        const uniqueChanges = new Map<string, Change>();
+        for (const change of changes) {
+            const fsPath = change.uri.fsPath;
+            if (!uniqueChanges.has(fsPath)) {
+                uniqueChanges.set(fsPath, change);
+            }
+        }
+
+        if (uniqueChanges.size === 0) {
+            return;
+        }
+
+        this.log(`[Git] State change: ${uniqueChanges.size} unique files`);
+
+        // Process each changed file
+        for (const [fsPath, change] of uniqueChanges) {
+            // Skip if recently processed (dedup rapid git events)
+            const now = Date.now();
+            const lastProcessed = this.lastProcessedChanges.get(fsPath);
+            if (lastProcessed && now - lastProcessed < 100) {
+                continue;
+            }
+            this.lastProcessedChanges.set(fsPath, now);
+
+            const relativePath = vscode.workspace.asRelativePath(change.uri);
+            const fileName = path.basename(relativePath);
+
+            this.eventCount++;
+            this.eventCountWindow.push(now);
+
+            this.log(`[Git] Event #${this.eventCount}: ${relativePath} (status=${Status[change.status]})`);
+            this.logStats();
+
+            // Process immediately (git already batches)
+            this.pendingEvents++;
+            this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
+            try {
+                await this.processFileChange({
+                    uri: change.uri,
+                    relativePath,
+                    fileName,
+                    timestamp: now
+                });
+            } finally {
+                this.pendingEvents--;
+            }
+        }
+
+        // Cleanup old entries from lastProcessedChanges (older than 5 seconds)
+        const cutoff = Date.now() - 5000;
+        for (const [filePath, timestamp] of this.lastProcessedChanges) {
+            if (timestamp < cutoff) {
+                this.lastProcessedChanges.delete(filePath);
+            }
+        }
+    }
+
+    /**
+     * Setup per-pattern file watchers for whitelisted files.
+     * Only these patterns will trigger events when git extension is unavailable.
+     */
+    private setupWhitelistWatchers(context: vscode.ExtensionContext): void {
+        // Clear existing watchers
+        this.disposeWhitelistWatchers();
+
+        const config = vscode.workspace.getConfiguration('sidecar');
+        const includeFiles = config.get<string[]>('includeFiles', []);
+
+        if (includeFiles.length === 0) {
+            this.log('No whitelist patterns configured');
+            return;
+        }
+
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            this.log('No workspace folder, cannot setup whitelist watchers');
+            return;
+        }
+
+        this.log(`Setting up ${includeFiles.length} whitelist watcher(s)`);
+
+        for (const pattern of includeFiles) {
+            // Use RelativePattern to properly match against workspace-relative paths
+            // createFileSystemWatcher matches against full absolute paths,
+            // so plain patterns like "dist/**" won't work without RelativePattern
+            const relativePattern = new vscode.RelativePattern(workspaceFolders[0], pattern);
+            const watcher = vscode.workspace.createFileSystemWatcher(relativePattern);
+            this.whitelistWatchers.push(watcher);
+
+            const handleWhitelistChange = (uri: vscode.Uri) => {
+                this.handleWhitelistFileChange(uri);
+            };
+
+            context.subscriptions.push(watcher);
+            context.subscriptions.push(watcher.onDidChange(handleWhitelistChange));
+            context.subscriptions.push(watcher.onDidCreate(handleWhitelistChange));
+
+            this.log(`  Whitelist watcher: ${pattern}`);
+        }
+    }
+
+    /**
+     * Dispose all whitelist watchers.
+     */
+    private disposeWhitelistWatchers(): void {
+        const count = this.whitelistWatchers.length;
+        for (const watcher of this.whitelistWatchers) {
+            watcher.dispose();
+        }
+        this.whitelistWatchers = [];
+        if (count > 0) {
+            this.log(`Disposed ${count} whitelist watcher(s)`);
+        }
+    }
+
+    /**
+     * Handle file change from whitelist watcher.
+     * Applies debounce logic to prevent rapid event processing.
+     */
+    private handleWhitelistFileChange(uri: vscode.Uri): void {
+        const relativePath = vscode.workspace.asRelativePath(uri);
+        const fileName = path.basename(relativePath);
+
+        this.eventCount++;
+        this.eventCountWindow.push(Date.now());
+
+        this.log(`[Whitelist] Event #${this.eventCount}: ${relativePath}`);
+        this.logStats();
+
+        // Apply debouncing for whitelist files
+        if (this.debounceMs === 0) {
+            this.pendingEvents++;
+            this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
+            this.processFileChange({ uri, relativePath, fileName, timestamp: Date.now() })
+                .finally(() => this.pendingEvents--);
+            return;
+        }
+
+        // Existing debounce logic
+        const existingTimer = this.debounceTimers.get(relativePath);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+            this.log(`[Debounce] Coalesced: ${relativePath}`);
+        } else {
+            this.log(`[Debounce] Scheduled: ${relativePath} (delay=${this.debounceMs}ms)`);
+        }
+
+        this.pendingEventData.set(relativePath, {
+            uri,
+            relativePath,
+            fileName,
+            timestamp: Date.now()
+        });
+
+        const timer = setTimeout(async () => {
+            const eventData = this.pendingEventData.get(relativePath);
+            this.debounceTimers.delete(relativePath);
+            this.pendingEventData.delete(relativePath);
+
+            if (eventData) {
+                this.log(`[Debounce] Fired: ${relativePath} (pending=${this.debounceTimers.size})`);
+                this.pendingEvents++;
+                this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
+                try {
+                    await this.processFileChange(eventData);
+                } finally {
+                    this.pendingEvents--;
+                }
+            }
+        }, this.debounceMs);
+
+        this.debounceTimers.set(relativePath, timer);
+    }
+
     reload(): void {
         this.gitignore = ignore();
         this.includePatterns = ignore();
         this.initialize();
+
+        // Re-setup whitelist watchers if context available
+        if (this.extensionContext) {
+            this.setupWhitelistWatchers(this.extensionContext);
+        }
+
+        this.log('FileWatchController reloaded');
     }
 
     /**
-     * Cleanup all debounce timers and pending data.
+     * Cleanup all debounce timers, watchers, and pending data.
      * Called when extension deactivates.
      */
     dispose(): void {
@@ -214,13 +499,25 @@ export class FileWatchController {
             clearTimeout(timer);
             this.log(`[Debounce] Cleanup: ${filePath}`);
         }
-
         this.debounceTimers.clear();
         this.pendingEventData.clear();
+
+        // Dispose whitelist watchers
+        this.disposeWhitelistWatchers();
+
+        // Clear git state tracking
+        this.lastProcessedChanges.clear();
+
+        // Clear git references (subscriptions auto-disposed via context)
+        this.gitAPI = undefined;
+        this.repository = undefined;
+        this.gitExtensionAvailable = false;
 
         if (timerCount > 0) {
             this.log(`Disposed: cleared ${timerCount} pending debounce timers`);
         }
+
+        this.log('FileWatchController disposed');
     }
 
     shouldTrack(uri: vscode.Uri): boolean {
@@ -246,28 +543,29 @@ export class FileWatchController {
 
     /**
      * Process a file change event (after debouncing).
-     * Contains the actual file change handling logic.
+     * Files reaching this point are already filtered by git extension or whitelist watchers.
      */
     private async processFileChange(data: DebouncedEventData): Promise<void> {
         const startTime = Date.now();
         const { uri, relativePath, fileName } = data;
 
-        // Check if it's a directory
+        // Check file exists and is not a directory
         try {
             const stat = await vscode.workspace.fs.stat(uri);
             if (stat.type === vscode.FileType.Directory) {
                 this.log(`  Skip: directory`);
                 return;
             }
-        } catch (error) {
-            this.log(`  Skip: stat failed`);
-            this.logError('stat', error);
+        } catch {
+            this.log(`  Skip: file not found or inaccessible`);
             return;
         }
 
-        // Check if file should be tracked
-        if (!this.shouldTrack(uri)) {
-            this.log(`  Skip: shouldTrack=false`);
+        // Skip internal/excluded files
+        if (relativePath.includes('sidecar-comments.json') ||
+            relativePath.startsWith('.git/') ||
+            relativePath.startsWith('.git\\')) {
+            this.log(`  Skip: excluded file`);
             return;
         }
 
@@ -312,86 +610,39 @@ export class FileWatchController {
     }
 
     activate(context: vscode.ExtensionContext): void {
+        this.extensionContext = context;
         this.debugChannel = vscode.window.createOutputChannel('Sidecar FileWatch');
         context.subscriptions.push(this.debugChannel);
 
-        const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+        this.log('Activating file watch with hybrid approach (Git Extension + Whitelist)');
 
-        const handleFileChange = async (uri: vscode.Uri) => {
-            const relativePath = vscode.workspace.asRelativePath(uri);
-            const fileName = path.basename(relativePath);
-
-            // Track event (immediate, before debounce)
-            this.eventCount++;
-            this.eventCountWindow.push(Date.now());
-
-            this.log(`📁 Event #${this.eventCount}: ${relativePath}`);
-            this.logStats();
-
-            // If debouncing disabled, process immediately
-            if (this.debounceMs === 0) {
-                this.pendingEvents++;
-                this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
-                try {
-                    await this.processFileChange({ uri, relativePath, fileName, timestamp: Date.now() });
-                } finally {
-                    this.pendingEvents--;
-                }
-                return;
-            }
-
-            // Cancel existing timer for this file
-            const existingTimer = this.debounceTimers.get(relativePath);
-            if (existingTimer) {
-                clearTimeout(existingTimer);
-                this.log(`[Debounce] Coalesced: ${relativePath}`);
+        // Initialize Git Extension for efficient file change tracking (async, non-blocking)
+        this.initGitExtension().then(() => {
+            if (this.repository) {
+                this.setupGitStateWatcher(context);
+                this.log('Git-based file watching enabled');
             } else {
-                this.log(`[Debounce] Scheduled: ${relativePath} (delay=${this.debounceMs}ms)`);
+                this.log('No git repository, using whitelist-only mode');
             }
+        });
 
-            // Store latest event data
-            this.pendingEventData.set(relativePath, {
-                uri,
-                relativePath,
-                fileName,
-                timestamp: Date.now()
-            });
+        // Setup whitelist watchers (always active, regardless of git extension)
+        this.setupWhitelistWatchers(context);
 
-            // Schedule debounced processing
-            const timer = setTimeout(async () => {
-                const eventData = this.pendingEventData.get(relativePath);
-                this.debounceTimers.delete(relativePath);
-                this.pendingEventData.delete(relativePath);
-
-                if (eventData) {
-                    this.log(`[Debounce] Fired: ${relativePath} (pending=${this.debounceTimers.size})`);
-                    this.pendingEvents++;
-                    this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
-                    try {
-                        await this.processFileChange(eventData);
-                    } finally {
-                        this.pendingEvents--;
-                    }
-                }
-            }, this.debounceMs);
-
-            this.debounceTimers.set(relativePath, timer);
-        };
-
+        // Watch for configuration changes
         context.subscriptions.push(
             vscode.workspace.onDidChangeConfiguration(e => {
                 if (e.affectsConfiguration('sidecar.includeFiles')) {
-                    this.reload();
+                    this.log('includeFiles configuration changed');
+                    this.loadIncludePatterns();
+                    this.setupWhitelistWatchers(context);
                 }
                 if (e.affectsConfiguration('sidecar.fileWatchDebounceMs')) {
+                    this.log('fileWatchDebounceMs configuration changed');
                     this.loadDebounceConfig();
                 }
             })
         );
-
-        context.subscriptions.push(fileWatcher);
-        context.subscriptions.push(fileWatcher.onDidChange(handleFileChange));
-        context.subscriptions.push(fileWatcher.onDidCreate(handleFileChange));
 
         // Watch for git commits by monitoring .git/HEAD changes
         this.setupGitCommitWatcher(context);
