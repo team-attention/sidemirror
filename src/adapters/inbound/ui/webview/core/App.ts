@@ -828,11 +828,84 @@ function renderContentViewState(contentView: ContentView): void {
   }
 
   if (iframe) {
+    // Track if content loaded successfully
+    let loadSuccessful = false;
+    let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const showError = () => {
+      const loading = document.getElementById('content-loading');
+      const error = document.getElementById('content-error');
+      if (loading) loading.classList.add('hidden');
+      if (error) error.classList.remove('hidden');
+      iframe.style.display = 'none';
+    };
+
+    const showContent = () => {
+      loadSuccessful = true;
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+      const loading = document.getElementById('content-loading');
+      if (loading) loading.classList.add('hidden');
+      iframe.style.display = 'block';
+    };
+
+    // Set a timeout to detect if iframe fails to load (X-Frame-Options, CSP blocks)
+    // Many sites block iframe embedding but don't trigger error events
+    loadTimeout = setTimeout(() => {
+      if (!loadSuccessful) {
+        // After timeout, check if iframe has any accessible content
+        try {
+          // Try to access iframe content - will throw for blocked/cross-origin frames
+          const doc = iframe.contentDocument;
+          // If we can access and it's empty or about:blank, likely blocked
+          if (doc && (doc.body?.innerHTML === '' || doc.URL === 'about:blank')) {
+            showError();
+            return;
+          }
+          // If accessible and has content, show it
+          if (doc && doc.body?.innerHTML) {
+            showContent();
+            return;
+          }
+          // Cross-origin but might be loaded - give benefit of doubt
+          showContent();
+        } catch {
+          // Cross-origin access denied - this is normal for loaded external sites
+          // The iframe might still be showing content, so show it
+          showContent();
+        }
+      }
+    }, 5000);
+
     iframe.addEventListener(
       'load',
       () => {
-        const loading = document.getElementById('content-loading');
-        if (loading) loading.classList.add('hidden');
+        // iframe loaded - but might be empty if blocked by X-Frame-Options
+        // Check if we can detect empty content
+        setTimeout(() => {
+          try {
+            const doc = iframe.contentDocument;
+            // If we can access the document and it's essentially empty, likely blocked
+            if (doc) {
+              const bodyContent = doc.body?.innerHTML?.trim() || '';
+              const hasContent = bodyContent.length > 0 && doc.URL !== 'about:blank';
+              if (hasContent) {
+                showContent();
+              } else {
+                // Empty content likely means blocked
+                showError();
+              }
+            } else {
+              // Can't access document (cross-origin) - assume loaded successfully
+              showContent();
+            }
+          } catch {
+            // Cross-origin access denied - iframe is loaded with external content
+            showContent();
+          }
+        }, 100);
       },
       { signal: getSignal() }
     );
@@ -840,10 +913,11 @@ function renderContentViewState(contentView: ContentView): void {
     iframe.addEventListener(
       'error',
       () => {
-        const loading = document.getElementById('content-loading');
-        const error = document.getElementById('content-error');
-        if (loading) loading.classList.add('hidden');
-        if (error) error.classList.remove('hidden');
+        if (loadTimeout) {
+          clearTimeout(loadTimeout);
+          loadTimeout = null;
+        }
+        showError();
       },
       { signal: getSignal() }
     );

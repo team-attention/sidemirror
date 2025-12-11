@@ -239,8 +239,8 @@ export class SidecarPanelAdapter {
                         await this.handleOpenHNStory(message.url);
                         break;
                     case 'openHNStoryInPanel':
-                        // Use new content view system instead of separate panel
-                        this.panelStateManager?.openContentView(message.url, message.title);
+                        // Check if URL can be embedded, otherwise open externally
+                        await this.handleOpenHNStoryInPanel(message.url, message.title);
                         break;
                     case 'openContentView':
                         this.panelStateManager?.openContentView(message.url, message.title);
@@ -754,6 +754,72 @@ export class SidecarPanelAdapter {
         if (!storyId) return;
         const hnUrl = `https://news.ycombinator.com/item?id=${storyId}`;
         await vscode.env.openExternal(vscode.Uri.parse(hnUrl));
+    }
+
+    /**
+     * Check if a URL can be embedded in an iframe
+     * Returns true if the URL allows iframe embedding, false otherwise
+     */
+    private async checkIframeEmbeddable(url: string): Promise<boolean> {
+        try {
+            // Use native fetch with HEAD request to check headers
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(url, {
+                method: 'HEAD',
+                signal: controller.signal,
+                redirect: 'follow',
+            });
+
+            clearTimeout(timeoutId);
+
+            // Check X-Frame-Options header
+            const xFrameOptions = response.headers.get('x-frame-options');
+            if (xFrameOptions) {
+                const value = xFrameOptions.toLowerCase();
+                if (value === 'deny' || value === 'sameorigin') {
+                    return false;
+                }
+            }
+
+            // Check Content-Security-Policy frame-ancestors directive
+            const csp = response.headers.get('content-security-policy');
+            if (csp) {
+                const frameAncestorsMatch = csp.match(/frame-ancestors\s+([^;]+)/i);
+                if (frameAncestorsMatch) {
+                    const ancestors = frameAncestorsMatch[1].toLowerCase().trim();
+                    // 'none' or 'self' means no external embedding
+                    if (ancestors === "'none'" || ancestors === "'self'") {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        } catch {
+            // On error (timeout, network issues), assume embeddable and let iframe handle it
+            return true;
+        }
+    }
+
+    /**
+     * Handle opening HN story in panel or external browser
+     * Checks if the URL can be embedded in iframe, opens externally if not
+     */
+    private async handleOpenHNStoryInPanel(url: string, title: string): Promise<void> {
+        if (!url) return;
+
+        const canEmbed = await this.checkIframeEmbeddable(url);
+        if (canEmbed) {
+            this.panelStateManager?.openContentView(url, title);
+        } else {
+            // Open in external browser and show notification
+            await vscode.env.openExternal(vscode.Uri.parse(url));
+            vscode.window.showInformationMessage(
+                `"${title}" opened in browser (site blocks iframe embedding)`
+            );
+        }
     }
 
     private escapeHtml(text: string): string {
