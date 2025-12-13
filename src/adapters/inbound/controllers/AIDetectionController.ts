@@ -40,11 +40,6 @@ export class AIDetectionController {
     private sessions = new Map<string, SessionContext>();
     private debugChannel: vscode.OutputChannel | undefined;
 
-    /** Stale session cleanup */
-    private readonly SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
-    private readonly CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-    private cleanupInterval: NodeJS.Timeout | null = null;
-
     /** FileWatchController reference for worktree support */
     private fileWatchController: IFileWatchController | undefined;
 
@@ -131,40 +126,6 @@ export class AIDetectionController {
         }, 30000);
 
         context.subscriptions.push({ dispose: () => clearInterval(healthCheckInterval) });
-
-        // Start stale session cleanup interval
-        this.startCleanupInterval();
-        context.subscriptions.push({ dispose: () => this.disposeCleanupInterval() });
-    }
-
-    private startCleanupInterval(): void {
-        this.cleanupInterval = setInterval(() => {
-            this.cleanupStaleSessions();
-        }, this.CLEANUP_INTERVAL_MS);
-    }
-
-    private disposeCleanupInterval(): void {
-        if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = null;
-        }
-    }
-
-    private cleanupStaleSessions(): void {
-        const now = Date.now();
-        for (const [terminalId, session] of this.sessions) {
-            if (now - session.lastActivityTime > this.SESSION_TIMEOUT_MS) {
-                this.log(`🧹 Cleaning up stale session: ${terminalId} (inactive for ${Math.round((now - session.lastActivityTime) / 60000)}min)`);
-                session.disposePanel();  // This will trigger flushSession
-            }
-        }
-    }
-
-    private updateSessionActivity(terminalId: string): void {
-        const session = this.sessions.get(terminalId);
-        if (session) {
-            session.lastActivityTime = Date.now();
-        }
     }
 
     private async handleCommandStart(
@@ -397,7 +358,6 @@ export class AIDetectionController {
             addCommentUseCase,
             captureSnapshotsUseCase,
             disposePanel: () => panel.dispose(),
-            lastActivityTime: Date.now(),
         };
 
         this.sessions.set(terminalId, context);
@@ -549,6 +509,13 @@ export class AIDetectionController {
         if (context) {
             console.log(`[Sidecar] Terminal closed: ${context.session.type} (${terminalId})`);
             context.disposePanel();
+        } else {
+            // 세션이 없어도 패널이 있을 수 있음 (race condition: 세션 생성 중 터미널 닫힘)
+            const panel = SidecarPanelAdapter.getPanel(terminalId);
+            if (panel) {
+                console.log(`[Sidecar] Terminal closed (no session): disposing orphan panel (${terminalId})`);
+                panel.dispose();
+            }
         }
     }
 
@@ -561,7 +528,6 @@ export class AIDetectionController {
             const panel = SidecarPanelAdapter.getPanel(terminalId);
             if (panel) {
                 panel.show();
-                this.updateSessionActivity(terminalId);
             }
         }
     }
@@ -570,9 +536,6 @@ export class AIDetectionController {
         if (terminal) {
             const terminalId = this.getTerminalId(terminal);
             const context = this.sessions.get(terminalId);
-            if (context) {
-                this.updateSessionActivity(terminalId);
-            }
             return context?.session;
         }
 
@@ -580,9 +543,6 @@ export class AIDetectionController {
         if (activeTerminal) {
             const terminalId = this.getTerminalId(activeTerminal);
             const context = this.sessions.get(terminalId);
-            if (context) {
-                this.updateSessionActivity(terminalId);
-            }
             return context?.session;
         }
 
