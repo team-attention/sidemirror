@@ -8,6 +8,7 @@ import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { DiffDisplayState, ChunkDisplayInfo, FileInfo } from '../../../application/ports/outbound/PanelState';
 import { DiffResult } from '../../../domain/entities/Diff';
 import { GitExtension, GitAPI, Repository, Change, Status } from '../../../types/git';
+import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 
 /** Pending debounced event data */
 interface DebouncedEventData {
@@ -126,6 +127,16 @@ export class FileWatchController {
     /** Current debounce delay in ms (0 = disabled) */
     private debounceMs: number = 300;
 
+    // ===== Thread tracking =====
+    /** Current thread's terminal ID (null = no thread selected) */
+    private currentThreadId: string | null = null;
+    /** Current thread's whitelist patterns */
+    private currentThreadPatterns: string[] = [];
+    /** Current thread's state ID (for repository operations) */
+    private currentThreadStateId: string | undefined;
+    /** Repository for persisting thread state changes */
+    private threadStateRepository: IThreadStateRepository | undefined;
+
     constructor() {
         this.gitignore = ignore();
         this.includePatterns = ignore();
@@ -186,6 +197,106 @@ export class FileWatchController {
         this.gitPort = gitPort;
     }
 
+    setThreadStateRepository(repo: IThreadStateRepository): void {
+        this.threadStateRepository = repo;
+    }
+
+    /**
+     * Set the current thread and apply its whitelist patterns.
+     * Called when user selects a thread in ThreadListController.
+     *
+     * @param terminalId The terminal ID (null for "All Agents" view)
+     * @param patterns The thread's whitelist patterns
+     * @param threadStateId The actual thread state ID (for repository operations)
+     */
+    setCurrentThread(
+        terminalId: string | null,
+        patterns: string[],
+        threadStateId?: string
+    ): void {
+        this.currentThreadId = terminalId;
+        this.currentThreadPatterns = patterns;
+        this.currentThreadStateId = threadStateId;
+        this.log(`[Thread] Set current thread: ${terminalId ?? 'none'} (patterns=${patterns.length}, stateId=${threadStateId ?? 'none'})`);
+
+        // Rebuild effective patterns (global + thread)
+        this.rebuildIncludePatterns();
+    }
+
+    /**
+     * Get the current thread's terminal ID.
+     * Returns null if no thread is selected.
+     */
+    getCurrentThreadId(): string | null {
+        return this.currentThreadId;
+    }
+
+    /**
+     * Get the current thread's state ID (for repository operations).
+     */
+    getCurrentThreadStateId(): string | undefined {
+        return this.currentThreadStateId;
+    }
+
+    /**
+     * Add a whitelist pattern.
+     * If a thread is selected, saves to thread state.
+     * Otherwise, saves to global config.
+     *
+     * @param pattern The glob pattern to add
+     */
+    async addWhitelistPattern(pattern: string): Promise<void> {
+        if (this.currentThreadStateId && this.threadStateRepository) {
+            // Save to current thread using the efficient updateWhitelist method
+            const newPatterns = [...this.currentThreadPatterns];
+            if (!newPatterns.includes(pattern)) {
+                newPatterns.push(pattern);
+                await this.threadStateRepository.updateWhitelist(this.currentThreadStateId, newPatterns);
+                this.log(`[Thread] Added pattern "${pattern}" to thread ${this.currentThreadStateId}`);
+
+                // Update current patterns and rebuild
+                this.currentThreadPatterns = newPatterns;
+                this.rebuildIncludePatterns();
+                return;
+            }
+            return; // Pattern already exists
+        }
+
+        // Fallback: Save to global config (existing behavior)
+        const config = vscode.workspace.getConfiguration('sidecar');
+        const current = config.get<string[]>('includeFiles', []);
+        if (!current.includes(pattern)) {
+            await config.update('includeFiles', [...current, pattern], vscode.ConfigurationTarget.Workspace);
+            this.log(`[Global] Added pattern "${pattern}" to global config`);
+        }
+    }
+
+    /**
+     * Rebuild include patterns from global config + current thread patterns.
+     */
+    private rebuildIncludePatterns(): void {
+        // Reset and reload global patterns
+        this.includePatterns = ignore();
+
+        const config = vscode.workspace.getConfiguration('sidecar');
+        const globalPatterns = config.get<string[]>('includeFiles', []);
+
+        if (globalPatterns.length > 0) {
+            this.includePatterns.add(globalPatterns);
+        }
+
+        // Add current thread patterns
+        if (this.currentThreadPatterns.length > 0) {
+            this.includePatterns.add(this.currentThreadPatterns);
+            this.log(`[Thread] Applied ${this.currentThreadPatterns.length} thread patterns`);
+        }
+
+        // Rebuild whitelist watchers with new patterns
+        if (this.extensionContext) {
+            this.setupWhitelistWatchers(this.extensionContext);
+        }
+    }
+
     /**
      * Get the current file watch mode.
      */
@@ -222,12 +333,8 @@ export class FileWatchController {
     }
 
     private loadIncludePatterns(): void {
-        const config = vscode.workspace.getConfiguration('sidecar');
-        const includeFiles = config.get<string[]>('includeFiles', []);
-
-        if (includeFiles.length > 0) {
-            this.includePatterns.add(includeFiles);
-        }
+        // Delegate to rebuildIncludePatterns to handle both global and thread patterns
+        this.rebuildIncludePatterns();
     }
 
     private loadDebounceConfig(): void {

@@ -1,6 +1,6 @@
 import { ThreadState } from '../../../domain/entities/ThreadState';
 
-export type IsolationMode = 'none' | 'branch' | 'worktree';
+export type IsolationMode = 'none' | 'worktree';
 
 export interface CreateThreadInput {
     name: string;

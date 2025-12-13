@@ -90,6 +90,7 @@ export function activate(context: vscode.ExtensionContext) {
     const fileWatchController = new FileWatchController();
     fileWatchController.setGitPort(gitGateway);
     fileWatchController.setSessionsRef(aiDetectionController.getSessions());
+    fileWatchController.setThreadStateRepository(threadStateRepository);
 
     // Connect controllers for worktree support
     aiDetectionController.setFileWatchController(fileWatchController);
@@ -99,7 +100,9 @@ export function activate(context: vscode.ExtensionContext) {
         () => aiDetectionController.getSessions(),
         terminalGateway,
         createThreadUseCase,
-        (terminalId) => aiDetectionController.attachToTerminalById(terminalId)
+        (terminalId) => aiDetectionController.attachToTerminalById(terminalId),
+        fileWatchController,
+        commentRepository
     );
 
     // Connect AIDetectionController to notify ThreadListController on session changes

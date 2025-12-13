@@ -24,10 +24,7 @@ export class CreateThreadUseCase implements ICreateThreadUseCase {
         let branch: string | undefined;
         let worktreePath: string | undefined;
 
-        if (isolationMode === 'branch') {
-            await this.gitPort.createBranch(effectiveBranchName, workspaceRoot);
-            branch = effectiveBranchName;
-        } else if (isolationMode === 'worktree') {
+        if (isolationMode === 'worktree') {
             worktreePath = path.join(path.dirname(workspaceRoot), effectiveBranchName);
             await this.gitPort.createWorktree(worktreePath, effectiveBranchName, workspaceRoot);
             workingDir = worktreePath;

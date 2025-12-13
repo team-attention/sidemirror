@@ -48,6 +48,11 @@ export interface IPanelStateManager {
     clearComments(): void;
     markCommentsAsSubmitted(ids: string[]): void;
     findCommentById(id: string): CommentInfo | undefined;
+    /**
+     * Set all comments (replaces existing comments).
+     * Used when switching threads to show only that thread's comments.
+     */
+    setComments(comments: CommentInfo[]): void;
 
     // AI status
     setAIStatus(status: AIStatus): void;

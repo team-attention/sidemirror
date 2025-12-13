@@ -148,9 +148,8 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
             <div class="form-group">
                 <label class="form-label">Isolation</label>
                 <select class="form-select" id="isolationMode">
-                    <option value="none">Local (current branch)</option>
-                    <option value="branch">New Branch</option>
-                    <option value="worktree">New Worktree</option>
+                    <option value="none">Local</option>
+                    <option value="worktree">Worktree</option>
                 </select>
             </div>
             <div class="form-group hidden" id="branchGroup">

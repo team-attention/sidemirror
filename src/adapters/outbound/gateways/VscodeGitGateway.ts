@@ -185,22 +185,6 @@ export class VscodeGitGateway implements IGitPort {
         });
     }
 
-    async createBranch(name: string, workspaceRoot: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            exec(
-                `cd "${workspaceRoot}" && git checkout -b "${name}"`,
-                { maxBuffer: 1024 * 1024 },
-                (error) => {
-                    if (error) {
-                        reject(error);
-                        return;
-                    }
-                    resolve();
-                }
-            );
-        });
-    }
-
     async createWorktree(path: string, branch: string, workspaceRoot: string): Promise<void> {
         return new Promise((resolve, reject) => {
             exec(

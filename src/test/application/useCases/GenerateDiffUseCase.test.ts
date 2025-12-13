@@ -111,10 +111,6 @@ class MockGitPort implements IGitPort {
         return 'main';
     }
 
-    async createBranch(_name: string, _workspaceRoot: string): Promise<void> {
-        // Mock implementation
-    }
-
     async createWorktree(_path: string, _branch: string, _workspaceRoot: string): Promise<void> {
         // Mock implementation
     }

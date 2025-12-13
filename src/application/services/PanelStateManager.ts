@@ -405,6 +405,14 @@ export class PanelStateManager implements IPanelStateManager {
         return this.state.comments.find(c => c.id === id);
     }
 
+    setComments(comments: CommentInfo[]): void {
+        this.state = {
+            ...this.state,
+            comments: [...comments],
+        };
+        this.render();
+    }
+
     // ===== AI status =====
 
     setAIStatus(status: AIStatus): void {

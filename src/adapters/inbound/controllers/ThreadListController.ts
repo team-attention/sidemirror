@@ -4,6 +4,8 @@ import { ThreadListWebviewProvider, CreateThreadOptions } from '../ui/ThreadList
 import { SidecarPanelAdapter } from '../ui/SidecarPanelAdapter';
 import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort';
 import { ICreateThreadUseCase, IsolationMode } from '../../../application/ports/inbound/ICreateThreadUseCase';
+import { FileWatchController } from './FileWatchController';
+import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
 
 export class ThreadListController {
     private webviewProvider: ThreadListWebviewProvider | undefined;
@@ -14,7 +16,9 @@ export class ThreadListController {
         private readonly getSessions: () => Map<string, SessionContext>,
         private readonly terminalGateway: ITerminalPort,
         private readonly createThreadUseCase?: ICreateThreadUseCase,
-        private readonly attachSidecar?: (terminalId: string) => Promise<void>
+        private readonly attachSidecar?: (terminalId: string) => Promise<void>,
+        private readonly fileWatchController?: FileWatchController,
+        private readonly commentRepository?: ICommentRepository
     ) {}
 
     activate(context: vscode.ExtensionContext): void {
@@ -36,8 +40,8 @@ export class ThreadListController {
 
         // Register select command
         this.disposables.push(
-            vscode.commands.registerCommand('sidecar.selectThread', (id: string) => {
-                this.selectThread(id);
+            vscode.commands.registerCommand('sidecar.selectThread', async (id: string) => {
+                await this.selectThread(id);
             })
         );
 
@@ -47,8 +51,9 @@ export class ThreadListController {
 
     /**
      * Select a thread by ID.
+     * Applies thread's whitelist patterns and filters comments.
      */
-    selectThread(id: string): void {
+    async selectThread(id: string): Promise<void> {
         const sessions = this.getSessions();
         const context = sessions.get(id);
 
@@ -66,6 +71,34 @@ export class ThreadListController {
                 name: metadata.name,
                 status: metadata.status
             });
+        }
+
+        // Apply thread whitelist patterns
+        const threadState = context.threadState;
+        const patterns = threadState?.whitelistPatterns ?? [];
+        this.fileWatchController?.setCurrentThread(id, patterns, threadState?.threadId);
+
+        // Set threadId on state manager
+        context.stateManager.setThreadId(threadState?.threadId);
+
+        // Filter and set comments for this thread
+        if (this.commentRepository && threadState) {
+            const comments = await this.commentRepository.findByThreadId(threadState.threadId);
+            // Also include comments without threadId (backward compatibility)
+            const allComments = await this.commentRepository.findActive();
+            const legacyComments = allComments.filter(c => !c.threadId);
+            const threadComments = [...comments, ...legacyComments];
+
+            context.stateManager.setComments(threadComments.map(c => ({
+                id: c.id,
+                file: c.file,
+                line: c.line,
+                endLine: c.endLine,
+                text: c.text,
+                isSubmitted: c.isSubmitted,
+                codeContext: c.codeContext,
+                timestamp: c.timestamp,
+            })));
         }
 
         // Show terminal for this session
@@ -88,7 +121,7 @@ export class ThreadListController {
     /**
      * Cycle to next thread.
      */
-    cycleToNextThread(): void {
+    async cycleToNextThread(): Promise<void> {
         const sessions = this.getSessions();
         const sessionIds = Array.from(sessions.keys());
 
@@ -101,7 +134,7 @@ export class ThreadListController {
             : -1;
         const nextIndex = (currentIndex + 1) % sessionIds.length;
 
-        this.selectThread(sessionIds[nextIndex]);
+        await this.selectThread(sessionIds[nextIndex]);
     }
 
     /**
@@ -143,7 +176,7 @@ export class ThreadListController {
 
             // Refresh and select new thread
             this.refresh();
-            this.selectThread(result.threadState.terminalId);
+            await this.selectThread(result.threadState.terminalId);
 
             vscode.window.showInformationMessage(`Agent "${options.name.trim()}" created`);
         } catch (error) {
@@ -177,17 +210,16 @@ export class ThreadListController {
 
         // Step 2: Isolation mode
         const isolationPick = await vscode.window.showQuickPick([
-            { label: 'Current workspace', description: 'No isolation', mode: 'none' as IsolationMode },
-            { label: 'New branch', description: 'Create a new git branch', mode: 'branch' as IsolationMode },
-            { label: 'New worktree', description: 'Recommended for parallel work', mode: 'worktree' as IsolationMode },
+            { label: 'Local', description: 'Work in current workspace', mode: 'none' as IsolationMode },
+            { label: 'Worktree', description: 'Create isolated worktree for parallel work', mode: 'worktree' as IsolationMode },
         ], {
             placeHolder: 'Select isolation mode',
         });
         if (!isolationPick) return;
 
-        // Step 3: Branch name (if needed)
+        // Step 3: Branch name (for worktree)
         let branchName: string | undefined;
-        if (isolationPick.mode !== 'none') {
+        if (isolationPick.mode === 'worktree') {
             branchName = await vscode.window.showInputBox({
                 prompt: 'Branch name',
                 value: name.trim(),
@@ -212,7 +244,7 @@ export class ThreadListController {
 
             // Refresh and select new thread
             this.refresh();
-            this.selectThread(result.threadState.terminalId);
+            await this.selectThread(result.threadState.terminalId);
 
             vscode.window.showInformationMessage(`Agent "${name.trim()}" created`);
         } catch (error) {
