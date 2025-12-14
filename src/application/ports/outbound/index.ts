@@ -1,5 +1,6 @@
 export { ICommentRepository } from './ICommentRepository';
 export { ISnapshotRepository } from './ISnapshotRepository';
+export { IFileThreadMappingRepository } from './IFileThreadMappingRepository';
 export { ITerminalPort } from './ITerminalPort';
 export { IFileSystemPort } from './IFileSystemPort';
 export { IGitPort } from './IGitPort';

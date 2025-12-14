@@ -2419,4 +2419,16 @@ button:hover {
   background: rgba(38, 198, 218, 0.2);
   color: #26c6da;
 }
+
+/* Thread Badge Styles (Multi-Thread Mode) */
+.thread-badge {
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-badge-background);
+  border-radius: 3px;
+  font-weight: normal;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
 `;

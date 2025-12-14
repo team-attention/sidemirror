@@ -92,10 +92,14 @@ export class PanelStateManager implements IPanelStateManager {
     // ===== Baseline operations =====
 
     setBaseline(files: FileInfo[]): void {
-        this.baselineSet = new Set(files.map((f) => f.path));
+        // Filter out files that are already in sessionFiles to avoid duplicates
+        const sessionFilePaths = new Set(this.state.sessionFiles.map(f => f.path));
+        const filteredFiles = files.filter(f => !sessionFilePaths.has(f.path));
+
+        this.baselineSet = new Set(filteredFiles.map((f) => f.path));
         this.state = {
             ...this.state,
-            uncommittedFiles: files,
+            uncommittedFiles: filteredFiles,
         };
         this.render();
     }
@@ -583,6 +587,16 @@ export class PanelStateManager implements IPanelStateManager {
 
     getThreadId(): string | undefined {
         return this.state.threadId;
+    }
+
+    setThreadCount(count: number): void {
+        if (this.state.threadCount !== count) {
+            this.state = {
+                ...this.state,
+                threadCount: count,
+            };
+            this.render();
+        }
     }
 
     // ===== Private =====

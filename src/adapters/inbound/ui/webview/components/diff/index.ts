@@ -24,6 +24,7 @@ export {
   renderDiffStats,
   renderViewModeToggle,
   renderFeedToggle,
+  renderThreadBadge,
   renderStatsSection,
   updateDiffHeader,
   renderPlaceholder,

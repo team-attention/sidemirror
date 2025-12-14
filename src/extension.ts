@@ -7,6 +7,7 @@ import { DiffService } from './domain/services/DiffService';
 import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseCase';
 import { CreateThreadUseCase } from './application/useCases/CreateThreadUseCase';
 import { ManageWhitelistUseCase } from './application/useCases/ManageWhitelistUseCase';
+import { TrackFileOwnershipUseCase } from './application/useCases/TrackFileOwnershipUseCase';
 
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
@@ -31,6 +32,7 @@ import { WORKSPACE_STATE_KEYS } from './application/ports/outbound/IWorkspaceSta
 // Infrastructure - Repositories
 import { JsonCommentRepository } from './infrastructure/repositories/JsonCommentRepository';
 import { JsonThreadStateRepository } from './infrastructure/repositories/JsonThreadStateRepository';
+import { InMemoryFileThreadMappingRepository } from './infrastructure/repositories/InMemoryFileThreadMappingRepository';
 
 let extensionContext: vscode.ExtensionContext;
 
@@ -42,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const commentRepository = new JsonCommentRepository(workspaceRoot);
     const threadStateRepository = new JsonThreadStateRepository(workspaceRoot);
+    const fileThreadMappingRepository = new InMemoryFileThreadMappingRepository();
 
     // ===== Domain Layer =====
     const diffService = new DiffService();
@@ -61,7 +64,12 @@ export function activate(context: vscode.ExtensionContext) {
     const submitCommentsUseCase = new SubmitCommentsUseCase(
         commentRepository,
         terminalGateway,
-        notificationGateway
+        notificationGateway,
+        fileThreadMappingRepository,
+        threadStateRepository
+    );
+    const trackFileOwnershipUseCase = new TrackFileOwnershipUseCase(
+        fileThreadMappingRepository
     );
     const createThreadUseCase = new CreateThreadUseCase(
         threadStateRepository,
@@ -90,6 +98,7 @@ export function activate(context: vscode.ExtensionContext) {
     fileWatchController.setGitPort(gitGateway);
     fileWatchController.setSessionsRef(aiDetectionController.getSessions());
     fileWatchController.setThreadStateRepository(threadStateRepository);
+    fileWatchController.setTrackFileOwnershipUseCase(trackFileOwnershipUseCase);
 
     // Connect controllers for worktree support
     aiDetectionController.setFileWatchController(fileWatchController);

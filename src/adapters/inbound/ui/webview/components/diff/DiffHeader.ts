@@ -18,6 +18,8 @@ export interface DiffHeaderProps {
   hasScopedDiff: boolean;
   isMarkdown: boolean;
   aiActive: boolean;
+  ownerThreadName?: string;
+  multipleThreadsExist: boolean;
 }
 
 /**
@@ -77,6 +79,14 @@ export function renderFeedToggle(aiActive: boolean): string {
 }
 
 /**
+ * Render thread badge (only when multiple threads exist)
+ */
+export function renderThreadBadge(ownerThreadName?: string, multipleThreadsExist?: boolean): string {
+  if (!multipleThreadsExist || !ownerThreadName) return '';
+  return `<span class="thread-badge">[${ownerThreadName}]</span>`;
+}
+
+/**
  * Render complete stats section
  */
 export function renderStatsSection(props: DiffHeaderProps): string {
@@ -98,9 +108,11 @@ export function updateDiffHeader(
   props: DiffHeaderProps,
   onOpenFile: (filePath: string) => void
 ): void {
-  const { filePath, stats, viewMode, hasScopedDiff, isMarkdown, aiActive } = props;
+  const { filePath, stats, viewMode, hasScopedDiff, isMarkdown, aiActive, ownerThreadName, multipleThreadsExist } = props;
 
-  headerEl.textContent = filePath;
+  // Render file path with optional thread badge
+  const threadBadge = renderThreadBadge(ownerThreadName, multipleThreadsExist);
+  headerEl.innerHTML = `<span class="file-path">${filePath}</span>${threadBadge}`;
   headerEl.style.cursor = 'pointer';
   headerEl.onclick = () => onOpenFile(filePath);
 
@@ -111,6 +123,8 @@ export function updateDiffHeader(
     hasScopedDiff,
     isMarkdown,
     aiActive,
+    ownerThreadName,
+    multipleThreadsExist,
   });
 }
 

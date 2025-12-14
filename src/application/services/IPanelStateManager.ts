@@ -123,4 +123,10 @@ export interface IPanelStateManager {
      * Get the current thread ID.
      */
     getThreadId(): string | undefined;
+
+    /**
+     * Set the total number of active threads.
+     * Used to determine whether to show thread badges on files.
+     */
+    setThreadCount(count: number): void;
 }

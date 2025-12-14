@@ -9,6 +9,7 @@ import { DiffDisplayState, ChunkDisplayInfo, FileInfo } from '../../../applicati
 import { DiffResult } from '../../../domain/entities/Diff';
 import { GitExtension, GitAPI, Repository, Change, Status } from '../../../types/git';
 import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
+import { ITrackFileOwnershipUseCase } from '../../../application/ports/inbound/ITrackFileOwnershipUseCase';
 
 /** Native fs.watch wrapper for directories outside VSCode workspace */
 interface NativeFsWatcher {
@@ -144,6 +145,8 @@ export class FileWatchController {
     private currentThreadStateId: string | undefined;
     /** Repository for persisting thread state changes */
     private threadStateRepository: IThreadStateRepository | undefined;
+    /** Use case for tracking file ownership */
+    private trackFileOwnershipUseCase: ITrackFileOwnershipUseCase | undefined;
 
     constructor() {
         this.gitignore = ignore();
@@ -207,6 +210,10 @@ export class FileWatchController {
 
     setThreadStateRepository(repo: IThreadStateRepository): void {
         this.threadStateRepository = repo;
+    }
+
+    setTrackFileOwnershipUseCase(useCase: ITrackFileOwnershipUseCase): void {
+        this.trackFileOwnershipUseCase = useCase;
     }
 
     /**
@@ -792,6 +799,18 @@ export class FileWatchController {
                 }
             }
 
+            // Track file ownership for the focused thread
+            if (focusedThreadId && this.trackFileOwnershipUseCase) {
+                const focusedSession = this.sessions?.get(focusedThreadId);
+                if (focusedSession?.threadState?.threadId) {
+                    await this.trackFileOwnershipUseCase.execute({
+                        filePath: relativePath,
+                        threadId: focusedSession.threadState.threadId
+                    });
+                    this.log(`  Tracked ownership: ${relativePath} -> ${focusedSession.threadState.name}`);
+                }
+            }
+
             this.processedCount++;
             const totalTime = Date.now() - startTime;
             if (totalTime > 200) {
@@ -1260,6 +1279,15 @@ export class FileWatchController {
 
             // Notify session
             await this.notifyFileChange(session, relativePath, fileName, status);
+
+            // Track file ownership for this worktree session
+            if (session.threadState?.threadId && this.trackFileOwnershipUseCase) {
+                await this.trackFileOwnershipUseCase.execute({
+                    filePath: relativePath,
+                    threadId: session.threadState.threadId
+                });
+                this.log(`[Worktree:FSW] Tracked ownership: ${relativePath} -> ${session.threadState.name}`);
+            }
         } catch (error) {
             this.logError('handleWorktreeFileChange', error);
         }
@@ -1321,6 +1349,15 @@ export class FileWatchController {
 
             // Notify only this session
             await this.notifyFileChange(session, relativePath, fileName, status);
+
+            // Track file ownership for this worktree session
+            if (session.threadState?.threadId && this.trackFileOwnershipUseCase) {
+                await this.trackFileOwnershipUseCase.execute({
+                    filePath: relativePath,
+                    threadId: session.threadState.threadId
+                });
+                this.log(`[Worktree] Tracked ownership: ${relativePath} -> ${session.threadState.name}`);
+            }
         }
 
         // Cleanup old dedup entries

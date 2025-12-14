@@ -7,4 +7,5 @@ export interface SubmitCommentsResult {
 
 export interface ISubmitCommentsUseCase {
     execute(session: AISession | undefined): Promise<SubmitCommentsResult | null>;
+    executeWithRouting(focusedSession: AISession | undefined): Promise<SubmitCommentsResult | null>;
 }

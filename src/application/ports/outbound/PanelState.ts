@@ -34,6 +34,10 @@ export interface FileInfo {
     agentName?: string;
     /** Color index for agent badge (0-5 for 6-color palette, -1 for multi-agent) */
     agentColorIndex?: number;
+    /** Thread ID that last modified this file */
+    ownerThreadId?: string;
+    /** Thread name for UI badge */
+    ownerThreadName?: string;
 }
 
 /**
@@ -188,6 +192,8 @@ export interface PanelState {
     isAggregatedView?: boolean;
     /** Thread ID for per-thread comment filtering */
     threadId?: string;
+    /** Total number of active threads (for showing thread badges) */
+    threadCount: number;
 }
 
 /**
@@ -218,5 +224,6 @@ export function createInitialPanelState(): PanelState {
         contentView: null,
         agentInfo: undefined,
         isAggregatedView: false,
+        threadCount: 0,
     };
 }

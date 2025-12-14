@@ -6,6 +6,7 @@ export { CaptureSnapshotsUseCase } from './CaptureSnapshotsUseCase';
 export { EditCommentUseCase } from './EditCommentUseCase';
 export { DeleteCommentUseCase } from './DeleteCommentUseCase';
 export { FetchHNStoriesUseCase } from './FetchHNStoriesUseCase';
+export { TrackFileOwnershipUseCase } from './TrackFileOwnershipUseCase';
 
 // Re-export from ports for backward compatibility
 export { AddCommentInput } from '../ports/inbound/IAddCommentUseCase';
