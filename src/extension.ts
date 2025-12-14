@@ -125,6 +125,11 @@ export function activate(context: vscode.ExtensionContext) {
         threadListController.refresh();
     });
 
+    // Connect terminal focus to thread list selection
+    aiDetectionController.setOnTerminalFocus((terminalId) => {
+        threadListController.updateSelectedThread(terminalId);
+    });
+
     // Connect terminal output to status detection
     terminalGateway.onTerminalOutput((terminalId, data) => {
         const sessions = aiDetectionController.getSessions();

@@ -147,17 +147,20 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .form-input::placeholder{color:var(--vscode-input-placeholderForeground)}
         .submit-button{width:100%;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:6px 12px;font-size:13px;cursor:pointer;margin-top:8px}
         .submit-button:hover{background:var(--vscode-button-hoverBackground)}
-        .thread-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer}
+        .thread-item{display:flex;align-items:center;gap:10px;padding:12px 12px;cursor:pointer;min-height:44px}
         .thread-item:hover{background:var(--vscode-list-hoverBackground)}
         .thread-item.selected{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)}
+        .thread-item.waiting{animation:bg-blink 1s ease-in-out infinite}
+        @keyframes bg-blink{0%,100%{background:rgba(204,167,0,0.15)}50%{background:transparent}}
         .thread-icon{width:16px;text-align:center;flex-shrink:0}
         .thread-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .thread-status{display:flex;align-items:center;justify-content:center;width:20px;height:20px;font-size:12px;flex-shrink:0}
+        .thread-status{display:flex;align-items:center;justify-content:center;width:24px;height:24px;font-size:10px;flex-shrink:0}
         .thread-status.inactive{color:var(--vscode-disabledForeground)}
-        .thread-status.idle{color:var(--vscode-foreground)}
-        .thread-status.working{color:var(--vscode-charts-green);animation:spin 1s linear infinite}
-        .thread-status.waiting{color:var(--vscode-charts-yellow)}
-        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        .thread-status.idle{color:var(--vscode-charts-blue,#3794ff)}
+        .thread-status.working{color:var(--vscode-charts-green,#89d185);animation:pulse 1.5s ease-in-out infinite;text-shadow:0 0 8px var(--vscode-charts-green,#89d185)}
+        .thread-status.waiting{color:var(--vscode-charts-yellow,#cca700);animation:blink 1s ease-in-out infinite}
+        @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(1.2)}}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
         .thread-file-count{font-size:11px;color:var(--vscode-descriptionForeground);flex-shrink:0}
         .empty-msg{padding:8px 12px;color:var(--vscode-descriptionForeground);font-style:italic}
     </style>
@@ -289,9 +292,9 @@ threadName.addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn
 function getStatusIcon(status) {
     switch (status) {
         case 'inactive': return '\u25CB';  // ○ Empty circle
-        case 'idle': return '\u2500';      // ─ Dash
-        case 'working': return '\u27F3';   // ⟳ Rotating arrow
-        case 'waiting': return '?';        // ? Question mark
+        case 'idle': return '\u25CF';      // ● Filled circle
+        case 'working': return '\u25CF';   // ● Filled circle (animated)
+        case 'waiting': return '\u25CF';   // ● Filled circle
         default: return '\u25CB';
     }
 }
@@ -313,10 +316,9 @@ function render(threads) {
         return;
     }
     threadList.innerHTML = threads.map(t =>
-        '<div class="thread-item' + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '">' +
+        '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '">' +
         '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
         '<span class="thread-name">' + esc(t.name) + '</span>' +
-        '<span class="thread-file-count">' + t.fileCount + '</span>' +
         '</div>'
     ).join('');
 

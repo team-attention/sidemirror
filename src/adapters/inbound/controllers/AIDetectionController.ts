@@ -50,6 +50,9 @@ export class AIDetectionController {
     /** Callback for session changes (used by ThreadListController) */
     private onSessionChangeCallback?: () => void;
 
+    /** Callback for terminal focus changes (used by ThreadListController) */
+    private onTerminalFocusCallback?: (terminalId: string) => void;
+
     private log(message: string): void {
         if (!this.debugChannel) return;
         const timestamp = new Date().toISOString().substring(11, 23);
@@ -100,6 +103,13 @@ export class AIDetectionController {
      */
     setOnSessionChange(callback: () => void): void {
         this.onSessionChangeCallback = callback;
+    }
+
+    /**
+     * Set callback for terminal focus changes (used by ThreadListController).
+     */
+    setOnTerminalFocus(callback: (terminalId: string) => void): void {
+        this.onTerminalFocusCallback = callback;
     }
 
     /**
@@ -391,11 +401,11 @@ export class AIDetectionController {
 
         // ===== SessionContext 생성 및 저장 =====
         const session = AISession.create(type, terminalId);
-        // Set initial status to 'idle' - agent is ready for input
-        // Status will change to 'working' when AI starts processing
+        // Set initial status to 'inactive' - agent just started, waiting for first interaction
+        // Status will change to 'working'/'idle' based on terminal activity
         session.setAgentMetadata({
             name: threadState?.name ?? session.displayName,
-            status: 'idle',
+            status: 'inactive',
             fileCount: 0,
         });
         const submitCommentsCallback = async () => {
@@ -635,6 +645,9 @@ export class AIDetectionController {
         const context = this.sessions.get(terminalId);
 
         if (context) {
+            // Notify ThreadListController to update thread selection
+            this.onTerminalFocusCallback?.(terminalId);
+
             // Load comments for this thread before switching
             const threadState = context.threadState;
             if (threadState) {

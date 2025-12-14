@@ -208,6 +208,15 @@ export class ThreadListController {
     }
 
     /**
+     * Update thread selection without triggering full selectThread logic.
+     * Used when terminal is focused externally (e.g., clicking terminal panel).
+     */
+    updateSelectedThread(terminalId: string): void {
+        this.selectedThreadId = terminalId;
+        this.webviewProvider?.setSelectedId(terminalId);
+    }
+
+    /**
      * Create a thread from webview input.
      */
     private async createThreadFromInput(options: CreateThreadOptions): Promise<void> {
