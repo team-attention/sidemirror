@@ -2,6 +2,7 @@ export type TerminalActivityCallback = (terminalId: string, hasActivity: boolean
 export type TerminalOutputCallback = (terminalId: string, data: string) => void;
 
 export interface ITerminalPort {
+    initialize(): void;
     sendText(terminalId: string, text: string): void;
     showTerminal(terminalId: string): void;
     createTerminal(name: string, cwd?: string): Promise<string>;

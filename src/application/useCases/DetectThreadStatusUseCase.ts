@@ -13,7 +13,8 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
     private states = new Map<string, TerminalState>();
     private callbacks: StatusChangeCallback[] = [];
 
-    private static DEBOUNCE_MS = 200;
+    // Time to wait after last output before checking for idle
+    private static IDLE_DEBOUNCE_MS = 500;
     private static BUFFER_LINES = 10;
 
     constructor(private detector: ITerminalStatusDetector) {}
@@ -26,23 +27,34 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
         state.buffer.push(...newLines);
         state.buffer = state.buffer.slice(-DetectThreadStatusUseCase.BUFFER_LINES);
 
-        // Debounce status detection
+        // Activity-based detection: output received = working
+        // Set to 'working' immediately if not already working
+        if (state.status !== 'working') {
+            state.status = 'working';
+            state.lastUpdate = Date.now();
+            this.notifyChange(terminalId, 'working');
+        }
+
+        // Reset debounce timer for idle detection
         if (state.debounceTimer) {
             clearTimeout(state.debounceTimer);
         }
 
+        // After output stops, check for idle/waiting patterns
         state.debounceTimer = setTimeout(() => {
             const detectedStatus = this.detector.detectFromBuffer(aiType, state.buffer);
 
-            // Only update if we detected a meaningful status (not 'inactive')
-            // Once we have a real status, don't revert to 'inactive' -
-            // the session is active until explicitly cleared
-            if (detectedStatus !== 'inactive' && detectedStatus !== state.status) {
-                state.status = detectedStatus;
-                state.lastUpdate = Date.now();
-                this.notifyChange(terminalId, detectedStatus);
+            // Only transition to idle or waiting (not to 'inactive')
+            if (detectedStatus === 'idle' || detectedStatus === 'waiting') {
+                if (state.status !== detectedStatus) {
+                    state.status = detectedStatus;
+                    state.lastUpdate = Date.now();
+                    this.notifyChange(terminalId, detectedStatus);
+                }
             }
-        }, DetectThreadStatusUseCase.DEBOUNCE_MS);
+            // If no pattern matched but output stopped, assume still working
+            // (might be waiting for slow response)
+        }, DetectThreadStatusUseCase.IDLE_DEBOUNCE_MS);
     }
 
     getStatus(terminalId: string): AgentStatus {
@@ -64,8 +76,8 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
     private getOrCreateState(terminalId: string): TerminalState {
         if (!this.states.has(terminalId)) {
             this.states.set(terminalId, {
-                // Start as 'working' since we're processing output (AI is active)
-                status: 'working',
+                // Start as 'inactive' - actual status determined by pattern detection
+                status: 'inactive',
                 buffer: [],
                 lastUpdate: Date.now(),
             });

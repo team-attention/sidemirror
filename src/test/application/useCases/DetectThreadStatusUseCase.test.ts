@@ -16,85 +16,79 @@ suite('DetectThreadStatusUseCase', () => {
         useCase.clear('terminal-1');
     });
 
-    suite('processOutput', () => {
-        test('initial state is working when first output is processed', (done) => {
+    suite('processOutput - activity-based detection', () => {
+        test('immediately sets to working when output received', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
             useCase.processOutput('terminal-1', 'claude', 'Some output');
 
-            // Wait for debounce
-            setTimeout(() => {
-                const status = useCase.getStatus('terminal-1');
-                assert.strictEqual(status, 'working');
-                done();
-            }, 250);
+            // Should immediately notify working status
+            assert.strictEqual(statuses.length, 1);
+            assert.strictEqual(statuses[0], 'working');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+            done();
         });
 
-        test('TS-4: debounces rapid status changes', (done) => {
-            let changeCount = 0;
-            useCase.onStatusChange(() => {
-                changeCount++;
-            });
-
-            // Rapid fire multiple outputs
-            useCase.processOutput('terminal-1', 'claude', '● Reading...');
-            useCase.processOutput('terminal-1', 'claude', '● Writing...');
-            useCase.processOutput('terminal-1', 'claude', '● Searching...');
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');  // waiting
-
-            // Wait for debounce
-            setTimeout(() => {
-                // Should only have one status change (to waiting)
-                // because all intermediate outputs were debounced
-                assert.strictEqual(changeCount, 1);
-                assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
-                done();
-            }, 250);
-        });
-
-        test('does not revert to inactive once a status is detected', (done) => {
+        test('transitions to idle after debounce when prompt detected', (done) => {
             const statuses: AgentStatus[] = [];
             useCase.onStatusChange((_terminalId, status) => {
                 statuses.push(status);
             });
 
-            // First, detect waiting status
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
+            // Send output with prompt at end
+            useCase.processOutput('terminal-1', 'claude', '> ');
 
+            // Wait for debounce (500ms + buffer)
             setTimeout(() => {
-                // Then send output that doesn't match any pattern
-                useCase.processOutput('terminal-1', 'claude', 'random text with no pattern');
-
-                setTimeout(() => {
-                    // Status should still be waiting, not reverted to inactive
-                    assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
-                    // Only one status change should have occurred
-                    assert.strictEqual(statuses.length, 1);
-                    assert.strictEqual(statuses[0], 'waiting');
-                    done();
-                }, 250);
-            }, 250);
+                assert.strictEqual(statuses.length, 2);
+                assert.strictEqual(statuses[0], 'working');  // Immediate
+                assert.strictEqual(statuses[1], 'idle');     // After debounce
+                assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+                done();
+            }, 600);
         });
 
-        test('updates status when a new valid pattern is detected', (done) => {
+        test('stays working if output continues', (done) => {
             const statuses: AgentStatus[] = [];
             useCase.onStatusChange((_terminalId, status) => {
                 statuses.push(status);
             });
 
-            // Detect waiting status
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
+            // Send rapid outputs
+            useCase.processOutput('terminal-1', 'claude', 'Reading...');
+            setTimeout(() => {
+                useCase.processOutput('terminal-1', 'claude', 'Writing...');
+            }, 100);
+            setTimeout(() => {
+                useCase.processOutput('terminal-1', 'claude', 'Done');
+            }, 200);
+
+            // Wait a bit and check status
+            setTimeout(() => {
+                // Should only have one working notification (initial)
+                assert.strictEqual(statuses.length, 1);
+                assert.strictEqual(statuses[0], 'working');
+                done();
+            }, 350);
+        });
+
+        test('detects waiting status from y/n prompt', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            useCase.processOutput('terminal-1', 'claude', 'Do you want to proceed? (y/n)');
 
             setTimeout(() => {
-                // Then detect idle status
-                useCase.processOutput('terminal-1', 'claude', '> ');
-
-                setTimeout(() => {
-                    assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
-                    assert.strictEqual(statuses.length, 2);
-                    assert.strictEqual(statuses[0], 'waiting');
-                    assert.strictEqual(statuses[1], 'idle');
-                    done();
-                }, 250);
-            }, 250);
+                assert.strictEqual(statuses.length, 2);
+                assert.strictEqual(statuses[0], 'working');
+                assert.strictEqual(statuses[1], 'waiting');
+                done();
+            }, 600);
         });
     });
 
@@ -106,67 +100,46 @@ suite('DetectThreadStatusUseCase', () => {
     });
 
     suite('onStatusChange', () => {
-        test('notifies callback on status change', (done) => {
-            let notifiedTerminalId = '';
-            let notifiedStatus: AgentStatus = 'inactive';
-
-            useCase.onStatusChange((terminalId, status) => {
-                notifiedTerminalId = terminalId;
-                notifiedStatus = status;
-            });
-
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
-
-            setTimeout(() => {
-                assert.strictEqual(notifiedTerminalId, 'terminal-1');
-                assert.strictEqual(notifiedStatus, 'waiting');
-                done();
-            }, 250);
-        });
-
         test('notifies multiple callbacks', (done) => {
             let count = 0;
 
             useCase.onStatusChange(() => count++);
             useCase.onStatusChange(() => count++);
 
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
+            useCase.processOutput('terminal-1', 'claude', 'Some output');
 
-            setTimeout(() => {
-                assert.strictEqual(count, 2);
-                done();
-            }, 250);
+            // Should immediately notify both callbacks
+            assert.strictEqual(count, 2);
+            done();
         });
     });
 
     suite('clear', () => {
         test('removes terminal state', (done) => {
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
+            useCase.processOutput('terminal-1', 'claude', 'Some output');
 
-            setTimeout(() => {
-                assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
 
-                useCase.clear('terminal-1');
+            useCase.clear('terminal-1');
 
-                assert.strictEqual(useCase.getStatus('terminal-1'), 'inactive');
-                done();
-            }, 250);
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'inactive');
+            done();
         });
 
         test('clears pending debounce timer', (done) => {
             let changeCount = 0;
             useCase.onStatusChange(() => changeCount++);
 
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
+            useCase.processOutput('terminal-1', 'claude', '> ');
 
             // Clear before debounce fires
             useCase.clear('terminal-1');
 
             setTimeout(() => {
-                // No status change should have occurred
-                assert.strictEqual(changeCount, 0);
+                // Only the initial 'working' notification, no 'idle' after clear
+                assert.strictEqual(changeCount, 1);
                 done();
-            }, 250);
+            }, 600);
         });
     });
 
@@ -177,13 +150,13 @@ suite('DetectThreadStatusUseCase', () => {
                 useCase.processOutput('terminal-1', 'claude', `Line ${i}`);
             }
 
-            // Then send a pattern that should be detected
-            useCase.processOutput('terminal-1', 'claude', 'Enter to select');
+            // Then send a prompt that should be detected
+            useCase.processOutput('terminal-1', 'claude', '> ');
 
             setTimeout(() => {
-                assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+                assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
                 done();
-            }, 250);
+            }, 600);
         });
     });
 });

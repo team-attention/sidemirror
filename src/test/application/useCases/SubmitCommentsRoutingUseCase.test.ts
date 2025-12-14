@@ -30,6 +30,7 @@ class MockCommentRepository implements ICommentRepository {
 class MockTerminalPort implements ITerminalPort {
     public sentMessages: { terminalId: string; text: string }[] = [];
 
+    initialize(): void {}
     sendText(terminalId: string, text: string): void {
         this.sentMessages.push({ terminalId, text });
     }

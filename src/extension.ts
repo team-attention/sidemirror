@@ -54,6 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // ===== Adapters Layer - Gateways =====
     const terminalGateway = new VscodeTerminalGateway();
+    terminalGateway.initialize();
     const fileSystemGateway = new VscodeFileSystemGateway();
     const gitGateway = new VscodeGitGateway();
     const notificationGateway = new VscodeNotificationGateway();
@@ -148,19 +149,34 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // Fallback: use activity-based detection when shell integration isn't available
+    // Activity-based detection: triggered when shell execution starts/ends
+    // This handles the case when shell execution ends (hasActivity=false)
+    // to transition from 'working' to 'idle'
     terminalGateway.onTerminalActivity((terminalId, hasActivity) => {
         const sessions = aiDetectionController.getSessions();
         const session = sessions.get(terminalId);
         if (session) {
-            // Only use activity-based status if no pattern-based status is available
             const currentStatus = detectThreadStatusUseCase.getStatus(terminalId);
-            if (currentStatus === 'inactive') {
-                const status = hasActivity ? 'working' : 'idle';
+            let newStatus: 'working' | 'idle' | undefined;
+
+            if (hasActivity) {
+                // Shell execution started - set to working if currently inactive
+                if (currentStatus === 'inactive') {
+                    newStatus = 'working';
+                }
+            } else {
+                // Shell execution ended - set to idle if currently working
+                // This handles the case when AI finishes its work
+                if (currentStatus === 'working' || currentStatus === 'inactive') {
+                    newStatus = 'idle';
+                }
+            }
+
+            if (newStatus) {
                 const currentMetadata = session.session.agentMetadata;
                 session.session.setAgentMetadata({
                     name: currentMetadata?.name ?? session.session.displayName,
-                    status,
+                    status: newStatus,
                     fileCount: currentMetadata?.fileCount ?? 0,
                 });
                 threadListController.refresh();
