@@ -46,6 +46,10 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.onDidReceiveMessage((message) => {
             switch (message.type) {
+                case 'webviewReady':
+                    // Webview is ready to receive messages, send initial data
+                    this.refresh();
+                    break;
                 case 'selectThread':
                     this.onSelectThread(message.id);
                     break;
@@ -58,9 +62,6 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                     break;
             }
         });
-
-        // Initial render
-        this.refresh();
     }
 
     setSelectedId(id: string): void {
@@ -86,11 +87,15 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         for (const [terminalId, ctx] of sessions) {
             const session = ctx.session;
             const metadata = session.agentMetadata;
+            const threadState = ctx.threadState;
             const fileCount = ctx.stateManager.getState().sessionFiles.length;
+
+            // Name priority: threadState.name > agentMetadata.name > session.displayName
+            const name = threadState?.name ?? metadata?.name ?? session.displayName;
 
             threads.push({
                 id: terminalId,
-                name: metadata?.name ?? session.displayName,
+                name,
                 status: metadata?.status ?? 'idle',
                 fileCount,
                 isSelected: this.selectedId === terminalId
@@ -248,6 +253,9 @@ function render(threads) {
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 window.addEventListener('message', e => { if (e.data.type === 'updateThreads') render(e.data.threads); });
+
+// Notify extension that webview is ready to receive messages
+vscode.postMessage({ type: 'webviewReady' });
 </script>
 </body>
 </html>`;

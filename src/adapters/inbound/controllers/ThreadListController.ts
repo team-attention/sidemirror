@@ -129,7 +129,12 @@ export class ThreadListController {
                 context.generateDiffUseCase,
                 context.addCommentUseCase,
                 context.submitComments,
-                context.stateManager
+                context.stateManager,
+                undefined, // symbolPort - not available in ThreadListController
+                context.editCommentUseCase,
+                context.deleteCommentUseCase,
+                context.fetchHNStoriesUseCase,
+                context.generateScopedDiffUseCase
             );
             panel.show();
         }

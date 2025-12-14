@@ -3,7 +3,11 @@ import { ThreadState } from '../../../domain/entities/ThreadState';
 import { ISnapshotRepository } from './ISnapshotRepository';
 import { IPanelStateManager } from '../../services/IPanelStateManager';
 import { IGenerateDiffUseCase } from '../inbound/IGenerateDiffUseCase';
+import { IGenerateScopedDiffUseCase } from '../inbound/IGenerateScopedDiffUseCase';
 import { IAddCommentUseCase } from '../inbound/IAddCommentUseCase';
+import { IEditCommentUseCase } from '../inbound/IEditCommentUseCase';
+import { IDeleteCommentUseCase } from '../inbound/IDeleteCommentUseCase';
+import { IFetchHNStoriesUseCase } from '../inbound/IFetchHNStoriesUseCase';
 import { ICaptureSnapshotsUseCase } from '../inbound/ICaptureSnapshotsUseCase';
 
 /**
@@ -31,6 +35,18 @@ export interface SessionContext {
 
     /** 이 세션의 Comment UseCase */
     addCommentUseCase: IAddCommentUseCase;
+
+    /** 이 세션의 Edit Comment UseCase */
+    editCommentUseCase: IEditCommentUseCase;
+
+    /** 이 세션의 Delete Comment UseCase */
+    deleteCommentUseCase: IDeleteCommentUseCase;
+
+    /** 이 세션의 Scoped Diff UseCase */
+    generateScopedDiffUseCase: IGenerateScopedDiffUseCase;
+
+    /** HN Stories UseCase (공유) */
+    fetchHNStoriesUseCase?: IFetchHNStoriesUseCase;
 
     /** 이 세션의 Snapshot UseCase */
     captureSnapshotsUseCase: ICaptureSnapshotsUseCase;

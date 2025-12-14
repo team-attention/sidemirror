@@ -409,6 +409,10 @@ export class AIDetectionController {
             stateManager,
             generateDiffUseCase,
             addCommentUseCase,
+            editCommentUseCase,
+            deleteCommentUseCase,
+            generateScopedDiffUseCase,
+            fetchHNStoriesUseCase: this.fetchHNStoriesUseCase,
             captureSnapshotsUseCase,
             // Panel은 세션이 닫힐 때 dispose하지 않음 (싱글 패널이므로)
             disposePanel: () => {
@@ -447,6 +451,29 @@ export class AIDetectionController {
 
         // AI 상태 업데이트
         stateManager.setAIStatus({ active: true, type });
+
+        // Set threadId on state manager for comment isolation
+        stateManager.setThreadId(threadState?.threadId);
+
+        // Load existing comments for this thread
+        if (threadState) {
+            const comments = await this.commentRepository.findByThreadId(threadState.threadId);
+            // Also include comments without threadId (backward compatibility)
+            const allComments = await this.commentRepository.findActive();
+            const legacyComments = allComments.filter(c => !c.threadId);
+            const threadComments = [...comments, ...legacyComments];
+
+            stateManager.setComments(threadComments.map(c => ({
+                id: c.id,
+                file: c.file,
+                line: c.line,
+                endLine: c.endLine,
+                text: c.text,
+                isSubmitted: c.isSubmitted,
+                codeContext: c.codeContext,
+                timestamp: c.timestamp,
+            })));
+        }
 
         // 패널 자동 표시
         panel.show();
@@ -596,11 +623,32 @@ export class AIDetectionController {
         // 세션이 없으면 무시 (싱글 패널은 세션과 독립적으로 유지)
     }
 
-    private handleTerminalFocus(terminal: vscode.Terminal): void {
+    private async handleTerminalFocus(terminal: vscode.Terminal): Promise<void> {
         const terminalId = this.getTerminalId(terminal);
         const context = this.sessions.get(terminalId);
 
         if (context) {
+            // Load comments for this thread before switching
+            const threadState = context.threadState;
+            if (threadState) {
+                const comments = await this.commentRepository.findByThreadId(threadState.threadId);
+                // Also include comments without threadId (backward compatibility)
+                const allComments = await this.commentRepository.findActive();
+                const legacyComments = allComments.filter(c => !c.threadId);
+                const threadComments = [...comments, ...legacyComments];
+
+                context.stateManager.setComments(threadComments.map(c => ({
+                    id: c.id,
+                    file: c.file,
+                    line: c.line,
+                    endLine: c.endLine,
+                    text: c.text,
+                    isSubmitted: c.isSubmitted,
+                    codeContext: c.codeContext,
+                    timestamp: c.timestamp,
+                })));
+            }
+
             // Switch panel to this session's context
             const panel = SidecarPanelAdapter.currentPanel;
             if (panel) {
@@ -616,7 +664,11 @@ export class AIDetectionController {
                         }
                     },
                     context.stateManager,
-                    this.symbolPort
+                    this.symbolPort,
+                    context.editCommentUseCase,
+                    context.deleteCommentUseCase,
+                    context.fetchHNStoriesUseCase,
+                    context.generateScopedDiffUseCase
                 );
                 panel.show();
             }
