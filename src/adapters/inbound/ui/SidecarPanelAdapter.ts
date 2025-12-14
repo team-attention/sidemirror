@@ -77,6 +77,15 @@ export class SidecarPanelAdapter {
             }
         );
 
+        // Set editor layout: Terminal 30%, Sidecar 70%
+        vscode.commands.executeCommand('vscode.setEditorLayout', {
+            orientation: 0, // horizontal
+            groups: [
+                { size: 0.3 },
+                { size: 0.7 }
+            ]
+        });
+
         SidecarPanelAdapter.instance = new SidecarPanelAdapter(panel, context);
         return SidecarPanelAdapter.instance;
     }
