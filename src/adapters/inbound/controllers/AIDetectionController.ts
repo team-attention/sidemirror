@@ -391,10 +391,11 @@ export class AIDetectionController {
 
         // ===== SessionContext 생성 및 저장 =====
         const session = AISession.create(type, terminalId);
-        // Set initial status to 'working' since we detected an AI command
+        // Set initial status to 'idle' - agent is ready for input
+        // Status will change to 'working' when AI starts processing
         session.setAgentMetadata({
             name: threadState?.name ?? session.displayName,
-            status: 'working',
+            status: 'idle',
             fileCount: 0,
         });
         const submitCommentsCallback = async () => {
