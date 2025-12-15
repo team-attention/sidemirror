@@ -42,18 +42,6 @@ suite('TerminalStatusDetector', () => {
             assert.strictEqual(status, 'idle');
         });
 
-        test('detects idle status from INSERT mode', () => {
-            const output = '-- INSERT --';
-            const status = detector.detect('claude', output);
-            assert.strictEqual(status, 'idle');
-        });
-
-        test('detects idle status from NORMAL mode', () => {
-            const output = '-- NORMAL --';
-            const status = detector.detect('claude', output);
-            assert.strictEqual(status, 'idle');
-        });
-
         test('returns inactive for unknown output', () => {
             const output = 'Some random text';
             const status = detector.detect('claude', output);
@@ -83,32 +71,6 @@ suite('TerminalStatusDetector', () => {
     });
 
     suite('detect - Codex patterns', () => {
-        test('detects idle status from input cursor prompt', () => {
-            const output = '| ▌implement {feature}';
-            const status = detector.detect('codex', output);
-            assert.strictEqual(status, 'idle');
-        });
-
-        test('detects idle status from box drawing pipe cursor', () => {
-            const output = '│ ▌';
-            const status = detector.detect('codex', output);
-            assert.strictEqual(status, 'idle');
-        });
-
-        test('detects waiting status for codex (y/n)', () => {
-            const output = '(y/n)';
-            const status = detector.detect('codex', output);
-            assert.strictEqual(status, 'waiting');
-        });
-
-        // Removed: Confirm pattern was too broad, caused false positives
-
-        test('detects idle status from send hint for codex', () => {
-            const output = '⮐ send    ^J newline    ^T transcript    ^C quit';
-            const status = detector.detect('codex', output);
-            assert.strictEqual(status, 'idle');
-        });
-
         test('detects idle status from welcome message for codex', () => {
             const output = 'To get started, describe a task';
             const status = detector.detect('codex', output);
@@ -150,48 +112,4 @@ suite('TerminalStatusDetector', () => {
         });
     });
 
-    suite('detectFromBuffer', () => {
-        test('returns status from most recent matching line', () => {
-            const lines = [
-                'Some old output',
-                'random text',
-                '> ',  // Most recent - should return idle
-            ];
-            const status = detector.detectFromBuffer('claude', lines);
-            assert.strictEqual(status, 'idle');
-        });
-
-        test('returns inactive for empty buffer', () => {
-            const status = detector.detectFromBuffer('claude', []);
-            assert.strictEqual(status, 'inactive');
-        });
-
-        test('returns inactive when no pattern matches', () => {
-            const lines = [
-                'Some random text',
-                'More random text',
-            ];
-            const status = detector.detectFromBuffer('claude', lines);
-            assert.strictEqual(status, 'inactive');
-        });
-
-        test('handles multi-line patterns by joining recent lines', () => {
-            const lines = [
-                'Line 1',
-                'Do you want to',
-                'proceed? (y/n)',  // Pattern spans two lines
-            ];
-            const status = detector.detectFromBuffer('claude', lines);
-            assert.strictEqual(status, 'waiting');
-        });
-
-        test('waiting takes precedence over idle in buffer', () => {
-            const lines = [
-                '> ',  // idle
-                'Do you want to proceed? (y/n)',  // waiting (more recent)
-            ];
-            const status = detector.detectFromBuffer('claude', lines);
-            assert.strictEqual(status, 'waiting');
-        });
-    });
 });

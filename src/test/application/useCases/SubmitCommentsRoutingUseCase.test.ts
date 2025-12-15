@@ -38,6 +38,8 @@ class MockTerminalPort implements ITerminalPort {
     async createTerminal(_name: string, _cwd?: string): Promise<string> { return 'mock-terminal'; }
     onTerminalActivity(_callback: (terminalId: string, hasActivity: boolean) => void): void {}
     onTerminalOutput(_callback: (terminalId: string, data: string) => void): void {}
+    onCommandExecuted(_callback: (terminalId: string, command: string) => void): void {}
+    onCommandEnded(_callback: (terminalId: string, command: string) => void): void {}
 }
 
 class MockNotificationPort implements INotificationPort {

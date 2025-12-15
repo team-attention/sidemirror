@@ -1,5 +1,6 @@
 export type TerminalActivityCallback = (terminalId: string, hasActivity: boolean) => void;
 export type TerminalOutputCallback = (terminalId: string, data: string) => void;
+export type TerminalCommandCallback = (terminalId: string, command: string) => void;
 
 export interface ITerminalPort {
     initialize(): void;
@@ -18,4 +19,15 @@ export interface ITerminalPort {
      * Requires shell integration enabled in the terminal.
      */
     onTerminalOutput(callback: TerminalOutputCallback): void;
+    /**
+     * Register a callback to receive command execution notifications.
+     * Called when a shell command is executed in the terminal.
+     */
+    onCommandExecuted(callback: TerminalCommandCallback): void;
+    /**
+     * Register a callback to receive command completion notifications.
+     * Called when a shell command finishes execution.
+     * Useful for detecting when AI CLI exits (claude, gemini, codex).
+     */
+    onCommandEnded(callback: TerminalCommandCallback): void;
 }

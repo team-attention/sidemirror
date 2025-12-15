@@ -231,5 +231,130 @@ suite('DetectThreadStatusUseCase', () => {
                 done();
             }, 600);
         });
+
+        test('transitions to waiting after tool execution with no completion', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // Tool execution detected (e.g., Write command)
+            useCase.processOutput('terminal-1', 'claude', '⏺ Write(README.md)\n\nfile contents here...');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+
+            // Wait for timeout (500ms) - should transition to waiting (not idle)
+            // because tool was in progress and no completion pattern was seen
+            setTimeout(() => {
+                assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+                assert.strictEqual(statuses.length, 2);
+                assert.strictEqual(statuses[0], 'working');
+                assert.strictEqual(statuses[1], 'waiting');
+                done();
+            }, 600);
+        });
+
+        test('transitions to idle after tool execution with completion', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // Tool execution detected
+            useCase.processOutput('terminal-1', 'claude', '⏺ Write(README.md)\n\nfile contents...');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+
+            // Completion: idle prompt appears (auto-approved case)
+            useCase.processOutput('terminal-1', 'claude', '> ');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+
+            // Verify toolInProgress was reset
+            assert.strictEqual(statuses.length, 2);
+            assert.strictEqual(statuses[0], 'working');
+            assert.strictEqual(statuses[1], 'idle');
+            done();
+        });
+
+        test('Bash tool execution triggers waiting on timeout', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // Bash tool execution
+            useCase.processOutput('terminal-1', 'claude', '⏺ Bash(npm install)');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+
+            // Wait for timeout - should go to waiting
+            setTimeout(() => {
+                assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+                done();
+            }, 600);
+        });
+    });
+
+    suite('AI type detection from output', () => {
+        test('detects Gemini from output patterns', (done) => {
+            const detectedTypes: string[] = [];
+            useCase.onAITypeChange((_terminalId, aiType) => {
+                detectedTypes.push(aiType);
+            });
+
+            // Gemini welcome message
+            useCase.processOutput('terminal-1', 'claude', 'Tips for getting started:\n1. Ask questions');
+
+            assert.strictEqual(detectedTypes.length, 1);
+            assert.strictEqual(detectedTypes[0], 'gemini');
+            assert.strictEqual(useCase.getAIType('terminal-1'), 'gemini');
+            done();
+        });
+
+        test('detects Claude from output patterns', (done) => {
+            const detectedTypes: string[] = [];
+            useCase.onAITypeChange((_terminalId, aiType) => {
+                detectedTypes.push(aiType);
+            });
+
+            // Claude banner
+            useCase.processOutput('terminal-1', 'gemini', 'Welcome to Claude Code');
+
+            assert.strictEqual(detectedTypes.length, 1);
+            assert.strictEqual(detectedTypes[0], 'claude');
+            assert.strictEqual(useCase.getAIType('terminal-1'), 'claude');
+            done();
+        });
+
+        test('updates AI type when switching from Gemini to Claude', (done) => {
+            const detectedTypes: string[] = [];
+            useCase.onAITypeChange((_terminalId, aiType) => {
+                detectedTypes.push(aiType);
+            });
+
+            // Start with Gemini
+            useCase.processOutput('terminal-1', 'claude', 'Tips for getting started');
+            assert.strictEqual(useCase.getAIType('terminal-1'), 'gemini');
+
+            // Switch to Claude
+            useCase.processOutput('terminal-1', 'claude', 'Welcome to Claude Code');
+            assert.strictEqual(useCase.getAIType('terminal-1'), 'claude');
+
+            assert.strictEqual(detectedTypes.length, 2);
+            assert.strictEqual(detectedTypes[0], 'gemini');
+            assert.strictEqual(detectedTypes[1], 'claude');
+            done();
+        });
+
+        test('uses detected AI type for status detection', (done) => {
+            // First detect Gemini
+            useCase.processOutput('terminal-1', 'claude', 'Tips for getting started');
+            assert.strictEqual(useCase.getAIType('terminal-1'), 'gemini');
+
+            // Now send Gemini-specific working pattern
+            // Gemini's working pattern is "esc to cancel" (lowercase)
+            useCase.processOutput('terminal-1', 'claude', '(esc to cancel, 2s)');
+
+            // Should detect as working using Gemini patterns, not Claude's waiting
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+            done();
+        });
     });
 });

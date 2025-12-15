@@ -16,15 +16,27 @@ export interface AISessionData {
 }
 
 export class AISession {
-    readonly type: AIType;
+    private _type: AIType;
     readonly terminalId: string;
     readonly startTime: number;
     private _agentMetadata?: AgentMetadata;
 
     constructor(data: AISessionData) {
-        this.type = data.type;
+        this._type = data.type;
         this.terminalId = data.terminalId;
         this.startTime = data.startTime;
+    }
+
+    get type(): AIType {
+        return this._type;
+    }
+
+    /**
+     * Update the AI type for this session.
+     * Used when AI type is detected from command execution or output patterns.
+     */
+    updateType(newType: AIType): void {
+        this._type = newType;
     }
 
     get displayName(): string {

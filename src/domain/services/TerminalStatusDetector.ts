@@ -8,7 +8,7 @@ interface StatusPattern {
 
 export interface ITerminalStatusDetector {
     detect(aiType: AIType, output: string): AgentStatus;
-    detectFromBuffer(aiType: AIType, lines: string[]): AgentStatus;
+    detectAIType(output: string): AIType | null;
 }
 
 // Status detection rules:
@@ -116,6 +116,39 @@ const GENERIC_PATTERNS: StatusPattern[] = [
     },
 ];
 
+// AI type detection patterns - used to identify which AI CLI is running
+// These patterns match startup banners and unique UI elements
+const AI_TYPE_PATTERNS: { type: AIType; patterns: RegExp[] }[] = [
+    {
+        type: 'gemini',
+        patterns: [
+            /Gemini CLI/i,                    // Gemini banner
+            /Tips for getting started/i,      // Gemini welcome message
+            />\s*Type your message/i,         // Gemini input prompt
+            /Gemini \d+\.\d+/i,               // Gemini version (e.g., "Gemini 2.5")
+        ],
+    },
+    {
+        type: 'codex',
+        patterns: [
+            /OpenAI\s*Codex/i,                // Codex banner
+            />_\s*OpenAI/i,                   // Codex header
+            /To get started,?\s*describe/i,   // Codex welcome
+        ],
+    },
+    {
+        type: 'claude',
+        patterns: [
+            /Claude Code/i,                   // Claude Code banner
+            /claude\.ai/i,                    // Claude domain reference
+            /Anthropic/i,                     // Anthropic reference
+            /\bclaude\b.*\bsonnet\b/i,        // Model name (claude sonnet)
+            /\bclaude\b.*\bopus\b/i,          // Model name (claude opus)
+            /\bclaude\b.*\bhaiku\b/i,         // Model name (claude haiku)
+        ],
+    },
+];
+
 function getPatternsForAI(aiType: AIType): StatusPattern[] {
     switch (aiType) {
         case 'claude':
@@ -154,25 +187,21 @@ export class TerminalStatusDetector implements ITerminalStatusDetector {
         return 'inactive';
     }
 
-    detectFromBuffer(aiType: AIType, lines: string[]): AgentStatus {
-        // Check last few lines first (most recent output is most relevant)
-        // Start from the end and work backwards
-        for (let i = lines.length - 1; i >= 0; i--) {
-            const status = this.detect(aiType, lines[i]);
-            if (status !== 'inactive') {
-                return status;
+    /**
+     * Detect AI type from output content.
+     * Returns null if no AI type pattern is matched.
+     */
+    detectAIType(output: string): AIType | null {
+        const cleanOutput = stripAnsiCodes(output);
+
+        for (const { type, patterns } of AI_TYPE_PATTERNS) {
+            for (const pattern of patterns) {
+                if (pattern.test(cleanOutput)) {
+                    return type;
+                }
             }
         }
 
-        // Also try joining last 3 lines for multi-line patterns
-        if (lines.length >= 2) {
-            const recentOutput = lines.slice(-3).join('\n');
-            const status = this.detect(aiType, recentOutput);
-            if (status !== 'inactive') {
-                return status;
-            }
-        }
-
-        return 'inactive';
+        return null;
     }
 }

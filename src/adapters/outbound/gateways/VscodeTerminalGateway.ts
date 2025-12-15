@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
-import { ITerminalPort, TerminalActivityCallback, TerminalOutputCallback } from '../../../application/ports/outbound/ITerminalPort';
+import { ITerminalPort, TerminalActivityCallback, TerminalOutputCallback, TerminalCommandCallback } from '../../../application/ports/outbound/ITerminalPort';
 
 export class VscodeTerminalGateway implements ITerminalPort {
     private terminals = new Map<string, vscode.Terminal>();
     private terminalToId = new Map<vscode.Terminal, string>();
     private activityCallbacks: TerminalActivityCallback[] = [];
     private outputCallbacks: TerminalOutputCallback[] = [];
+    private commandCallbacks: TerminalCommandCallback[] = [];
+    private commandEndCallbacks: TerminalCommandCallback[] = [];
     private isActive = new Map<string, boolean>();
     private disposables: vscode.Disposable[] = [];
     private debugChannel: vscode.OutputChannel | undefined;
@@ -23,21 +25,17 @@ export class VscodeTerminalGateway implements ITerminalPort {
     }
 
     initialize(): void {
-        this.log('🚀 VscodeTerminalGateway initialized');
-
         // Listen for terminal shell execution start/end
         this.disposables.push(
             vscode.window.onDidStartTerminalShellExecution((e) => {
                 const terminalId = this.terminalToId.get(e.terminal);
                 const command = e.execution.commandLine?.value ?? 'unknown';
-                this.log(`🔵 Shell execution started: terminal=${e.terminal.name}, id=${terminalId}, cmd="${command.substring(0, 50)}"`);
                 if (terminalId) {
                     this.setActivity(terminalId, true);
-                    // Read terminal output stream
+                    this.notifyCommand(terminalId, command);
                     this.readOutputStream(terminalId, e.execution);
                 } else {
                     // Terminal not yet registered - save execution for later
-                    this.log(`📦 Storing pending execution for unregistered terminal: ${e.terminal.name}`);
                     this.pendingExecutions.set(e.terminal, e.execution);
                 }
             })
@@ -46,9 +44,10 @@ export class VscodeTerminalGateway implements ITerminalPort {
         this.disposables.push(
             vscode.window.onDidEndTerminalShellExecution((e) => {
                 const terminalId = this.terminalToId.get(e.terminal);
-                this.log(`🔴 Shell execution ended: terminal=${e.terminal.name}, id=${terminalId}, exitCode=${e.exitCode}`);
+                const command = e.execution.commandLine?.value ?? 'unknown';
                 if (terminalId) {
                     this.setActivity(terminalId, false);
+                    this.notifyCommandEnd(terminalId, command);
                 }
                 // Clean up pending execution if it was never picked up
                 this.pendingExecutions.delete(e.terminal);
@@ -60,16 +59,12 @@ export class VscodeTerminalGateway implements ITerminalPort {
         terminalId: string,
         execution: vscode.TerminalShellExecution
     ): Promise<void> {
-        this.log(`📖 readOutputStream started: id=${terminalId}`);
         try {
             const stream = execution.read();
             for await (const data of stream) {
-                this.log(`📥 OUTPUT: ${JSON.stringify(data)}`);
                 this.notifyOutput(terminalId, data);
             }
-            this.log(`📖 readOutputStream ended: id=${terminalId}`);
-        } catch (error) {
-            this.log(`❌ readOutputStream error: id=${terminalId}, error=${error}`);
+        } catch {
             // Stream ended or error - ignore
         }
     }
@@ -78,8 +73,8 @@ export class VscodeTerminalGateway implements ITerminalPort {
         for (const callback of this.outputCallbacks) {
             try {
                 callback(terminalId, data);
-            } catch (error) {
-                this.log(`❌ callback error: ${error}`);
+            } catch {
+                // Ignore callback errors
             }
         }
     }
@@ -87,7 +82,6 @@ export class VscodeTerminalGateway implements ITerminalPort {
     private setActivity(terminalId: string, hasActivity: boolean): void {
         const wasActive = this.isActive.get(terminalId) ?? false;
         if (wasActive !== hasActivity) {
-            this.log(`⚡ Activity changed: id=${terminalId}, ${wasActive} → ${hasActivity}`);
             this.isActive.set(terminalId, hasActivity);
             this.notifyActivity(terminalId, hasActivity);
         }
@@ -107,15 +101,42 @@ export class VscodeTerminalGateway implements ITerminalPort {
         this.outputCallbacks.push(callback);
     }
 
+    onCommandExecuted(callback: TerminalCommandCallback): void {
+        this.commandCallbacks.push(callback);
+    }
+
+    private notifyCommand(terminalId: string, command: string): void {
+        for (const callback of this.commandCallbacks) {
+            try {
+                callback(terminalId, command);
+            } catch {
+                // Ignore callback errors
+            }
+        }
+    }
+
+    onCommandEnded(callback: TerminalCommandCallback): void {
+        this.commandEndCallbacks.push(callback);
+    }
+
+    private notifyCommandEnd(terminalId: string, command: string): void {
+        for (const callback of this.commandEndCallbacks) {
+            try {
+                callback(terminalId, command);
+            } catch {
+                // Ignore callback errors
+            }
+        }
+    }
+
     registerTerminal(id: string, terminal: vscode.Terminal): void {
         this.terminals.set(id, terminal);
         this.terminalToId.set(terminal, id);
 
         // Check for pending execution saved before registration
-        // This handles the case when claude is started in a terminal before session registration
+        // This handles the case when AI CLI is started in a terminal before session registration
         const pendingExecution = this.pendingExecutions.get(terminal);
         if (pendingExecution) {
-            this.log(`📖 registerTerminal: found pending execution for ${id}, starting output read`);
             this.pendingExecutions.delete(terminal);
             this.setActivity(id, true);
             this.readOutputStream(id, pendingExecution);

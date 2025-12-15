@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 // Domain
 import { DiffService } from './domain/services/DiffService';
 import { TerminalStatusDetector } from './domain/services/TerminalStatusDetector';
+import { AIType } from './domain/entities/AISession';
 
 // Application - Use Cases
 import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseCase';
@@ -149,6 +150,66 @@ export function activate(context: vscode.ExtensionContext) {
             session.session.setAgentMetadata({
                 name: currentMetadata?.name ?? session.session.displayName,
                 status,
+                fileCount: currentMetadata?.fileCount ?? 0,
+            });
+            threadListController.refresh();
+        }
+    });
+
+    // Subscribe to AI type changes from output pattern detection (backup for command detection)
+    detectThreadStatusUseCase.onAITypeChange((terminalId, detectedAIType) => {
+        const sessions = aiDetectionController.getSessions();
+        const session = sessions.get(terminalId);
+        if (session && session.session.type !== detectedAIType) {
+            session.session.updateType(detectedAIType);
+            threadListController.refresh();
+        }
+    });
+
+    // Detect AI type from executed commands (primary detection method)
+    terminalGateway.onCommandExecuted((terminalId, command) => {
+        const sessions = aiDetectionController.getSessions();
+        const session = sessions.get(terminalId);
+        if (!session) return;
+
+        // Extract the base command (first word, ignoring paths)
+        const baseCommand = command.trim().split(/[\s/]/).pop()?.toLowerCase() ?? '';
+
+        let detectedType: AIType | null = null;
+        if (baseCommand === 'claude' || baseCommand.startsWith('claude-')) {
+            detectedType = 'claude';
+        } else if (baseCommand === 'gemini') {
+            detectedType = 'gemini';
+        } else if (baseCommand === 'codex') {
+            detectedType = 'codex';
+        }
+
+        if (detectedType && session.session.type !== detectedType) {
+            session.session.updateType(detectedType);
+            threadListController.refresh();
+        }
+    });
+
+    // Detect AI CLI exit (claude, gemini, codex ended) - reset to inactive
+    terminalGateway.onCommandEnded((terminalId, command) => {
+        const sessions = aiDetectionController.getSessions();
+        const session = sessions.get(terminalId);
+        if (!session) return;
+
+        const baseCommand = command.trim().split(/[\s/]/).pop()?.toLowerCase() ?? '';
+
+        const isAICLI = baseCommand === 'claude' || baseCommand.startsWith('claude-') ||
+                        baseCommand === 'gemini' ||
+                        baseCommand === 'codex';
+
+        if (isAICLI) {
+            // Clear status detection state
+            detectThreadStatusUseCase.clear(terminalId);
+            // Reset session status to inactive
+            const currentMetadata = session.session.agentMetadata;
+            session.session.setAgentMetadata({
+                name: currentMetadata?.name ?? session.session.displayName,
+                status: 'inactive',
                 fileCount: currentMetadata?.fileCount ?? 0,
             });
             threadListController.refresh();
