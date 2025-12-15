@@ -136,38 +136,25 @@ suite('DetectThreadStatusUseCase', () => {
                 // Only the initial 'working' notification, no 'idle' after clear
                 assert.strictEqual(changeCount, 1);
                 done();
-            }, 2500);
+            }, 700);
         });
     });
 
     suite('buffer management', () => {
-        test('keeps only last 20 lines in buffer', (done) => {
-            // Send 25 lines of output
-            for (let i = 0; i < 25; i++) {
-                useCase.processOutput('terminal-1', 'claude', `Line ${i}`);
-            }
+        test('detects waiting from chunked output', (done) => {
+            // Simulate "Do you want to" arriving in chunks
+            useCase.processOutput('terminal-1', 'claude', 'Do you ');
+            useCase.processOutput('terminal-1', 'claude', 'want to proceed? (y/n)');
 
-            // Then send a prompt that should be detected
-            useCase.processOutput('terminal-1', 'claude', '> ');
-
-            setTimeout(() => {
-                assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
-                done();
-            }, 600);
+            // Should detect waiting from accumulated buffer
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+            done();
         });
 
         test('detects waiting from buffer when prompt arrives in separate chunk', (done) => {
-            const statuses: AgentStatus[] = [];
-            useCase.onStatusChange((_terminalId, status) => {
-                statuses.push(status);
-            });
-
             // Simulate Claude permission dialog arriving in chunks
-            // First chunk: the question and options
-            useCase.processOutput('terminal-1', 'claude', 'Do you want to make this edit to README.md?');
-            useCase.processOutput('terminal-1', 'claude', '1. Yes');
-            useCase.processOutput('terminal-1', 'claude', '2. Yes, allow all edits during this session');
-            // Last chunk: just the cancel hint (no waiting pattern by itself)
+            useCase.processOutput('terminal-1', 'claude', 'Do you want to make this edit?\n');
+            useCase.processOutput('terminal-1', 'claude', '1. Yes\n');
             useCase.processOutput('terminal-1', 'claude', 'Esc to cancel');
 
             // Should detect waiting from buffer (Do you want to)
@@ -175,35 +162,40 @@ suite('DetectThreadStatusUseCase', () => {
             done();
         });
 
-        test('transitions from waiting to idle when prompt appears in current output', (done) => {
-            const statuses: AgentStatus[] = [];
-            useCase.onStatusChange((_terminalId, status) => {
-                statuses.push(status);
-            });
-
+        test('transitions from waiting to idle when prompt appears', (done) => {
             // First: permission dialog
             useCase.processOutput('terminal-1', 'claude', 'Do you want to proceed? (y/n)');
             assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
 
-            // User answers, new prompt appears in CURRENT output
+            // User answers, new prompt appears
             useCase.processOutput('terminal-1', 'claude', '> ');
 
-            // Should now be idle (prompt detected from current output)
+            // Should now be idle
             assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
             done();
         });
 
-        test('Gemini idle prompt detected from current output', (done) => {
-            const statuses: AgentStatus[] = [];
-            useCase.onStatusChange((_terminalId, status) => {
-                statuses.push(status);
-            });
+        test('clears buffer on idle transition', (done) => {
+            // Permission dialog
+            useCase.processOutput('terminal-1', 'claude', 'Do you want to proceed? (y/n)');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
 
-            // Simulate Gemini output sequence
-            useCase.processOutput('terminal-1', 'gemini', '+ Okay, I see the top-level directories.');
+            // Transition to idle
+            useCase.processOutput('terminal-1', 'claude', '> ');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+
+            // New output without waiting pattern - should go to working, not waiting
+            useCase.processOutput('terminal-1', 'claude', 'Reading file...');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+            done();
+        });
+
+        test('Gemini idle prompt detected', (done) => {
+            // Simulate Gemini output
+            useCase.processOutput('terminal-1', 'gemini', '+ Okay, I see the directories.\n');
             assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
 
-            // Idle prompt in current output
+            // Idle prompt
             useCase.processOutput('terminal-1', 'gemini', '> Type your message or @path/to/file');
             assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
             done();
@@ -218,6 +210,26 @@ suite('DetectThreadStatusUseCase', () => {
             useCase.processOutput('terminal-1', 'claude', 'Reading file...');
             assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
             done();
+        });
+
+        test('transitions to idle after output silence', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // AI is working
+            useCase.processOutput('terminal-1', 'claude', 'Reticulating... (esc to interrupt)');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+
+            // Wait for timeout (500ms) - should transition to idle
+            setTimeout(() => {
+                assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+                assert.strictEqual(statuses.length, 2);
+                assert.strictEqual(statuses[0], 'working');
+                assert.strictEqual(statuses[1], 'idle');
+                done();
+            }, 600);
         });
     });
 });

@@ -12,16 +12,18 @@ export interface ITerminalStatusDetector {
 }
 
 // Status detection rules:
-// - waiting: user input required (highest priority)
-// - working: "Esc to interrupt/cancel" visible
-// - idle: neither waiting nor working (determined by debounce)
+// - waiting: user input required (highest priority) - "Esc to cancel" in Claude
+// - working: "Esc to interrupt" visible (AI processing)
+// - idle: prompt ready for input
 
 const CLAUDE_PATTERNS: StatusPattern[] = [
     {
         status: 'waiting',
         priority: 2,
         patterns: [
-            /1\.\s*Yes,\s*allow/i,           // Confirmation menu
+            /Esc to cancel/i,               // Permission dialog
+            />\s*1\.\s*Yes/i,                // Permission menu option "> 1. Yes"
+            /1\.\s*Yes,\s*allow/i,           // Confirmation menu with allow
             /Enter to select/,
             /\(y\/n\)/i,
             /\[Y\/n\]/i,
@@ -43,36 +45,18 @@ const CLAUDE_PATTERNS: StatusPattern[] = [
         status: 'idle',
         priority: 0,
         patterns: [
-            /^>\s*$/,                         // Prompt (> )
-            /--\s*INSERT\s*--/,               // INSERT mode
-            /--\s*NORMAL\s*--/,               // NORMAL mode
+            /^>\s*$/m,                        // Empty prompt (> ) - multiline mode
         ],
     },
 ];
 
+// Codex: Only idle detection - output arrives in large batches, making
+// real-time working/waiting detection unreliable
 const CODEX_PATTERNS: StatusPattern[] = [
-    {
-        status: 'waiting',
-        priority: 2,
-        patterns: [
-            /1\.\s*Yes,\s*allow/i,           // Confirmation menu
-            /\(y\/n\)/i,
-            /\[Y\/n\]/i,
-        ],
-    },
-    {
-        status: 'working',
-        priority: 1,
-        patterns: [
-            /Esc to interrupt/i,              // "Working (1s • Esc to interrupt)"
-        ],
-    },
     {
         status: 'idle',
         priority: 0,
         patterns: [
-            /[│|]\s*▌/,                       // Input cursor (box drawing or pipe)
-            /⮐\s*send/,                       // Send hint
             /To get started,?\s*describe/i,   // Welcome message
             />_\s*OpenAI\s*Codex/i,           // Header banner
         ],

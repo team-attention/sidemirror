@@ -135,7 +135,8 @@ export function activate(context: vscode.ExtensionContext) {
         const sessions = aiDetectionController.getSessions();
         const session = sessions.get(terminalId);
         if (session) {
-            detectThreadStatusUseCase.processOutput(terminalId, session.session.type, data);
+            const aiType = session.session.type;
+            detectThreadStatusUseCase.processOutput(terminalId, aiType, data);
         }
     });
 

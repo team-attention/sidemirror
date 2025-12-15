@@ -16,7 +16,7 @@ export class VscodeTerminalGateway implements ITerminalPort {
         this.debugChannel = vscode.window.createOutputChannel('Code Squad Terminal');
     }
 
-    private log(message: string): void {
+    log(message: string): void {
         const timestamp = new Date().toISOString().substring(11, 23);
         const line = `[${timestamp}] ${message}`;
         this.debugChannel?.appendLine(line);
@@ -64,6 +64,7 @@ export class VscodeTerminalGateway implements ITerminalPort {
         try {
             const stream = execution.read();
             for await (const data of stream) {
+                this.log(`📥 OUTPUT: ${JSON.stringify(data)}`);
                 this.notifyOutput(terminalId, data);
             }
             this.log(`📖 readOutputStream ended: id=${terminalId}`);
@@ -75,7 +76,11 @@ export class VscodeTerminalGateway implements ITerminalPort {
 
     private notifyOutput(terminalId: string, data: string): void {
         for (const callback of this.outputCallbacks) {
-            callback(terminalId, data);
+            try {
+                callback(terminalId, data);
+            } catch (error) {
+                this.log(`❌ callback error: ${error}`);
+            }
         }
     }
 
