@@ -8,12 +8,14 @@
 
 
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/JakePark/code-squad?label=Downloads&color=teal)](https://open-vsx.org/extension/JakePark/code-squad)
-[![GitHub Stars](https://img.shields.io/github/stars/team-attention/sidecar?style=flat&color=yellow)](https://github.com/team-attention/sidecar)
-[![License](https://img.shields.io/github/license/team-attention/sidecar)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/team-attention/code-squad?style=flat&color=yellow)](https://github.com/team-attention/code-squad)
+[![License](https://img.shields.io/github/license/team-attention/code-squad)](LICENSE)
 
 </div>
 
 <br />
+
+> **Note**: This project was originally called "Sidecar". See [legacy documentation](SIDECAR_README.md).
 
 ## Why Code Squad?
 
@@ -83,11 +85,7 @@ VS Code 1.93.0+
 
 ## Links
 
-[GitHub](https://github.com/team-attention/sidecar) · [Issues](https://github.com/team-attention/sidecar/issues) · [Changelog](https://github.com/team-attention/sidecar/releases)
-
----
-
-> **Note**: Code Squad was originally called "Sidecar". See [legacy documentation](SIDECAR_README.md).
+[GitHub](https://github.com/team-attention/code-squad) · [Issues](https://github.com/team-attention/code-squad/issues) · [Changelog](https://github.com/team-attention/code-squad/releases)
 
 ---
 
