@@ -510,9 +510,12 @@ export class FileWatchController {
         this.disposeWhitelistWatchers();
 
         const config = vscode.workspace.getConfiguration('codeSquad');
-        const includeFiles = config.get<string[]>('includeFiles', []);
+        const globalPatterns = config.get<string[]>('includeFiles', []);
 
-        if (includeFiles.length === 0) {
+        // Combine global patterns with current thread patterns
+        const allPatterns = [...new Set([...globalPatterns, ...this.currentThreadPatterns])];
+
+        if (allPatterns.length === 0) {
             this.log('No whitelist patterns configured');
             return;
         }
@@ -523,9 +526,9 @@ export class FileWatchController {
             return;
         }
 
-        this.log(`Setting up ${includeFiles.length} whitelist watcher(s)`);
+        this.log(`Setting up ${allPatterns.length} whitelist watcher(s)`);
 
-        for (const pattern of includeFiles) {
+        for (const pattern of allPatterns) {
             // Use RelativePattern to properly match against workspace-relative paths
             // createFileSystemWatcher matches against full absolute paths,
             // so plain patterns like "dist/**" won't work without RelativePattern
