@@ -821,6 +821,14 @@ export class CodeSquadPanelAdapter {
         // Re-render with new session's state
         const state = panelStateManager.getState();
         this.render(state);
+
+        // Auto-select first file if no file is selected but session has files
+        // This handles the case where files were added while another session was focused
+        if (!state.selectedFile && state.sessionFiles.length > 0) {
+            const firstFile = state.sessionFiles[0];
+            console.log(`[Code Squad] Auto-selecting first file: ${firstFile.path}`);
+            this.handleSelectFile(firstFile.path);
+        }
     }
 
     /** Check if panel is still valid/active */
