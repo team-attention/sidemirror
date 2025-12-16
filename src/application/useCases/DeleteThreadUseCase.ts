@@ -50,6 +50,16 @@ export class DeleteThreadUseCase implements IDeleteThreadUseCase {
             try {
                 await this.gitPort.removeWorktree(threadState.worktreePath, workspaceRoot, true);
                 worktreeRemoved = true;
+
+                // 5.1. Delete branch after worktree is removed
+                if (threadState.branch) {
+                    try {
+                        await this.gitPort.deleteBranch(threadState.branch, workspaceRoot, true);
+                    } catch (branchError) {
+                        // Log but don't fail - branch might be in use elsewhere
+                        console.error('[Code Squad] Failed to delete branch:', branchError);
+                    }
+                }
             } catch (error) {
                 // Log but don't fail - worktree might already be gone
                 console.error('[Code Squad] Failed to remove worktree:', error);

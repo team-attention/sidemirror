@@ -36,15 +36,4 @@ export interface ITerminalPort {
      * No-op if terminal doesn't exist.
      */
     closeTerminal(terminalId: string): void;
-    /**
-     * Update terminal display name.
-     * Note: VSCode Terminal API has limitations on renaming.
-     * Implementation stores name internally for display purposes.
-     */
-    updateTerminalName(terminalId: string, newName: string): void;
-    /**
-     * Get display name for a terminal.
-     * Returns custom name if set via updateTerminalName, undefined otherwise.
-     */
-    getDisplayName(terminalId: string): string | undefined;
 }

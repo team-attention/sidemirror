@@ -36,8 +36,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         private readonly onOpenNewTerminal: (id: string) => void,
         private readonly onAttachToWorktree: () => void,
         private readonly onDeleteThread?: (threadId: string) => void,
-        private readonly onRenameThread?: (threadId: string) => void,
-        private readonly onSwitchBranch?: (threadId: string) => void
+        private readonly onOpenInEditor?: (threadId: string) => void
     ) {}
 
     resolveWebviewView(
@@ -83,14 +82,9 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                         this.onDeleteThread(message.threadId);
                     }
                     break;
-                case 'renameThread':
-                    if (this.onRenameThread) {
-                        this.onRenameThread(message.threadId);
-                    }
-                    break;
-                case 'switchBranch':
-                    if (this.onSwitchBranch) {
-                        this.onSwitchBranch(message.threadId);
+                case 'openInEditor':
+                    if (this.onOpenInEditor) {
+                        this.onOpenInEditor(message.threadId);
                     }
                     break;
             }
@@ -371,10 +365,9 @@ function render(threads) {
         '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
         '<span class="thread-name">' + esc(t.name) + '</span>' +
         '<div class="thread-actions">' +
-        '<button class="thread-action-btn terminal" title="Open terminal">\u276F_</button>' +
-        '<button class="thread-action-btn rename" title="Rename">\u270E</button>' +
-        (t.hasWorktree ? '<button class="thread-action-btn branch" title="Switch branch">\u2387</button>' : '') +
-        '<button class="thread-action-btn delete" title="Delete">\u2715</button>' +
+        '<button class="thread-action-btn terminal" title="Open Terminal">\uD83D\uDCBB</button>' +
+        (t.hasWorktree ? '<button class="thread-action-btn editor" title="Open in Editor">\uD83D\uDCC1</button>' : '') +
+        '<button class="thread-action-btn delete" title="Cleanup">\uD83D\uDDD1\uFE0F</button>' +
         '</div>' +
         '</div>'
     ).join('');
@@ -386,15 +379,11 @@ function render(threads) {
             e.stopPropagation();
             vscode.postMessage({ type: 'openNewTerminal', id: el.dataset.id });
         });
-        el.querySelector('.rename').addEventListener('click', (e) => {
-            e.stopPropagation();
-            vscode.postMessage({ type: 'renameThread', threadId });
-        });
-        const branchBtn = el.querySelector('.branch');
-        if (branchBtn) {
-            branchBtn.addEventListener('click', (e) => {
+        const editorBtn = el.querySelector('.editor');
+        if (editorBtn) {
+            editorBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                vscode.postMessage({ type: 'switchBranch', threadId });
+                vscode.postMessage({ type: 'openInEditor', threadId });
             });
         }
         el.querySelector('.delete').addEventListener('click', (e) => {
