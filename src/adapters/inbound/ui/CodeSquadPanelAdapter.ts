@@ -8,6 +8,7 @@ import { IEditCommentUseCase } from '../../../application/ports/inbound/IEditCom
 import { IDeleteCommentUseCase } from '../../../application/ports/inbound/IDeleteCommentUseCase';
 import { IFetchHNStoriesUseCase } from '../../../application/ports/inbound/IFetchHNStoriesUseCase';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
+import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 import { ISymbolPort, ScopeInfo } from '../../../application/ports/outbound/ISymbolPort';
 import { DiffResult, DiffChunk, DiffLine } from '../../../domain/entities/Diff';
 import { ScopedDiffResult, ScopedChunk } from '../../../domain/entities/ScopedDiff';
@@ -53,6 +54,7 @@ export class CodeSquadPanelAdapter {
     private panelStateManager: IPanelStateManager | undefined;
     private symbolPort: ISymbolPort | undefined;
     private workspaceRoot: string | undefined;
+    private threadStateRepository: IThreadStateRepository | undefined;
 
     /**
      * Get or create the singleton panel.
@@ -277,7 +279,8 @@ export class CodeSquadPanelAdapter {
         editCommentUseCase?: IEditCommentUseCase,
         deleteCommentUseCase?: IDeleteCommentUseCase,
         fetchHNStoriesUseCase?: IFetchHNStoriesUseCase,
-        generateScopedDiffUseCase?: IGenerateScopedDiffUseCase
+        generateScopedDiffUseCase?: IGenerateScopedDiffUseCase,
+        threadStateRepository?: IThreadStateRepository
     ): void {
         this.generateDiffUseCase = generateDiffUseCase;
         this.addCommentUseCase = addCommentUseCase;
@@ -288,6 +291,7 @@ export class CodeSquadPanelAdapter {
         this.deleteCommentUseCase = deleteCommentUseCase;
         this.fetchHNStoriesUseCase = fetchHNStoriesUseCase;
         this.generateScopedDiffUseCase = generateScopedDiffUseCase;
+        this.threadStateRepository = threadStateRepository;
     }
 
     /**
@@ -629,10 +633,25 @@ export class CodeSquadPanelAdapter {
     private async handleOpenFile(file: string): Promise<void> {
         if (!file) return;
 
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (!workspaceRoot) return;
+        // Determine base path: use worktreePath if available, otherwise workspaceRoot
+        let basePath: string | undefined;
 
-        const absolutePath = path.join(workspaceRoot, file);
+        const threadId = this.panelStateManager?.getThreadId();
+        if (threadId && this.threadStateRepository) {
+            const threadState = await this.threadStateRepository.findById(threadId);
+            if (threadState?.worktreePath) {
+                basePath = threadState.worktreePath;
+            }
+        }
+
+        // Fallback to current workspace root
+        if (!basePath) {
+            basePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        }
+
+        if (!basePath) return;
+
+        const absolutePath = path.join(basePath, file);
         const uri = vscode.Uri.file(absolutePath);
 
         try {
@@ -797,7 +816,8 @@ export class CodeSquadPanelAdapter {
         editCommentUseCase?: IEditCommentUseCase,
         deleteCommentUseCase?: IDeleteCommentUseCase,
         fetchHNStoriesUseCase?: IFetchHNStoriesUseCase,
-        generateScopedDiffUseCase?: IGenerateScopedDiffUseCase
+        generateScopedDiffUseCase?: IGenerateScopedDiffUseCase,
+        threadStateRepository?: IThreadStateRepository
     ): void {
         console.log(`[Code Squad] Switching panel to session: ${terminalId}`);
 
@@ -814,6 +834,7 @@ export class CodeSquadPanelAdapter {
         this.deleteCommentUseCase = deleteCommentUseCase;
         this.fetchHNStoriesUseCase = fetchHNStoriesUseCase;
         this.generateScopedDiffUseCase = generateScopedDiffUseCase;
+        this.threadStateRepository = threadStateRepository;
 
         // Update panel title
         this.panel.title = `Code Squad`;
