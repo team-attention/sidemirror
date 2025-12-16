@@ -9,4 +9,12 @@ export interface ICommentRepository {
     markAsSubmitted(ids: string[]): Promise<void>;
     update(id: string, text: string): Promise<Comment | null>;
     delete(id: string): Promise<boolean>;
+    /**
+     * Delete all comments associated with a thread.
+     * Used during thread cleanup.
+     *
+     * @param threadId - Thread ID to delete comments for
+     * @returns Number of comments deleted
+     */
+    deleteByThreadId(threadId: string): Promise<number>;
 }

@@ -203,4 +203,12 @@ export class VscodeTerminalGateway implements ITerminalPort {
 
         return terminalId;
     }
+
+    closeTerminal(terminalId: string): void {
+        const terminal = this.terminals.get(terminalId);
+        if (terminal) {
+            terminal.dispose();
+            this.unregisterTerminal(terminalId);
+        }
+    }
 }

@@ -30,4 +30,10 @@ export interface ITerminalPort {
      * Useful for detecting when AI CLI exits (claude, gemini, codex).
      */
     onCommandEnded(callback: TerminalCommandCallback): void;
+    /**
+     * Close a terminal by ID.
+     * Disposes the terminal instance.
+     * No-op if terminal doesn't exist.
+     */
+    closeTerminal(terminalId: string): void;
 }

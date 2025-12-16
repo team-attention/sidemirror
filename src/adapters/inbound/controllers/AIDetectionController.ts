@@ -725,6 +725,14 @@ export class AIDetectionController {
     }
 
     /**
+     * Remove a session by terminalId.
+     * Used when deleting a thread without closing its terminal.
+     */
+    removeSession(terminalId: string): void {
+        this.flushSession(terminalId);
+    }
+
+    /**
      * Detect AI type from terminal name or thread name.
      */
     private detectAITypeFromName(name: string): AIType {

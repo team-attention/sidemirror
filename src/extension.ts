@@ -12,6 +12,8 @@ import { AttachToWorktreeUseCase } from './application/useCases/AttachToWorktree
 import { ManageWhitelistUseCase } from './application/useCases/ManageWhitelistUseCase';
 import { TrackFileOwnershipUseCase } from './application/useCases/TrackFileOwnershipUseCase';
 import { DetectThreadStatusUseCase } from './application/useCases/DetectThreadStatusUseCase';
+import { DeleteThreadUseCase } from './application/useCases/DeleteThreadUseCase';
+import { OpenInEditorUseCase } from './application/useCases/OpenInEditorUseCase';
 
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
@@ -29,6 +31,7 @@ import {
     VscodeLspGateway,
     HNApiGateway,
     VscodeWorkspaceStateGateway,
+    VscodeEditorGateway,
 } from './adapters/outbound/gateways';
 import { FetchHNStoriesUseCase } from './application/useCases/FetchHNStoriesUseCase';
 import { WORKSPACE_STATE_KEYS } from './application/ports/outbound/IWorkspaceStatePort';
@@ -64,6 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
     const lspGateway = new VscodeLspGateway();
     const hnApiGateway = new HNApiGateway();
     const workspaceStateGateway = new VscodeWorkspaceStateGateway(context.workspaceState);
+    const editorGateway = new VscodeEditorGateway();
 
     // ===== Application Layer - Shared Use Cases =====
     const fetchHNStoriesUseCase = new FetchHNStoriesUseCase(hnApiGateway);
@@ -92,6 +96,17 @@ export function activate(context: vscode.ExtensionContext) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const manageWhitelistUseCase = new ManageWhitelistUseCase(threadStateRepository);
     const detectThreadStatusUseCase = new DetectThreadStatusUseCase(terminalStatusDetector, notificationGateway);
+    const deleteThreadUseCase = new DeleteThreadUseCase(
+        threadStateRepository,
+        terminalGateway,
+        gitGateway,
+        commentRepository,
+        detectThreadStatusUseCase
+    );
+    const openInEditorUseCase = new OpenInEditorUseCase(
+        threadStateRepository,
+        editorGateway
+    );
 
     // ===== Adapters Layer - Controllers =====
     const aiDetectionController = new AIDetectionController(
@@ -127,7 +142,11 @@ export function activate(context: vscode.ExtensionContext) {
         (terminalId) => aiDetectionController.attachToTerminalById(terminalId),
         fileWatchController,
         commentRepository,
-        gitGateway
+        gitGateway,
+        deleteThreadUseCase,
+        threadStateRepository,
+        openInEditorUseCase,
+        (terminalId) => aiDetectionController.removeSession(terminalId)
     );
 
     // Connect AIDetectionController to notify ThreadListController on session changes

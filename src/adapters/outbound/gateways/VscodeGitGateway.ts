@@ -340,4 +340,38 @@ export class VscodeGitGateway implements IGitPort {
             );
         });
     }
+
+    async removeWorktree(worktreePath: string, workspaceRoot: string, force = false): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const forceFlag = force ? ' --force' : '';
+            exec(
+                `cd "${workspaceRoot}" && git worktree remove "${worktreePath}"${forceFlag}`,
+                { maxBuffer: 1024 * 1024 },
+                (error) => {
+                    if (error) {
+                        reject(new Error(`Failed to remove worktree: ${error.message}`));
+                        return;
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
+
+    async deleteBranch(branchName: string, workspaceRoot: string, force = false): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const deleteFlag = force ? '-D' : '-d';
+            exec(
+                `cd "${workspaceRoot}" && git branch ${deleteFlag} "${branchName}"`,
+                { maxBuffer: 1024 * 1024 },
+                (error) => {
+                    if (error) {
+                        reject(new Error(`Failed to delete branch: ${error.message}`));
+                        return;
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
 }

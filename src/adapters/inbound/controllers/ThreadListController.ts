@@ -6,6 +6,9 @@ import { CodeSquadPanelAdapter } from '../ui/CodeSquadPanelAdapter';
 import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort';
 import { ICreateThreadUseCase, IsolationMode } from '../../../application/ports/inbound/ICreateThreadUseCase';
 import { IAttachToWorktreeUseCase } from '../../../application/ports/inbound/IAttachToWorktreeUseCase';
+import { IDeleteThreadUseCase } from '../../../application/ports/inbound/IDeleteThreadUseCase';
+import { IOpenInEditorUseCase } from '../../../application/ports/inbound/IOpenInEditorUseCase';
+import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 import { FileWatchController } from './FileWatchController';
 import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
 import { IGitPort, WorktreeInfo } from '../../../application/ports/outbound/IGitPort';
@@ -24,7 +27,11 @@ export class ThreadListController {
         private readonly attachCodeSquad?: (terminalId: string) => Promise<void>,
         private readonly fileWatchController?: FileWatchController,
         private readonly commentRepository?: ICommentRepository,
-        private readonly gitPort?: IGitPort
+        private readonly gitPort?: IGitPort,
+        private readonly deleteThreadUseCase?: IDeleteThreadUseCase,
+        private readonly threadStateRepository?: IThreadStateRepository,
+        private readonly openInEditorUseCase?: IOpenInEditorUseCase,
+        private readonly removeSession?: (terminalId: string) => void
     ) {}
 
     activate(context: vscode.ExtensionContext): void {
@@ -35,7 +42,9 @@ export class ThreadListController {
             (id) => this.selectThread(id),
             (options) => this.createThreadFromInput(options),
             (id) => this.openNewTerminal(id),
-            () => this.attachToWorktree()
+            () => this.attachToWorktree(),
+            (id) => this.deleteThread(id),
+            (id) => this.openInEditor(id)
         );
 
         // Register webview view provider
@@ -440,6 +449,94 @@ export class ThreadListController {
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to attach to worktree: ${message}`);
+        }
+    }
+
+    /**
+     * Delete a thread with confirmation dialog.
+     */
+    async deleteThread(threadId: string): Promise<void> {
+        if (!this.deleteThreadUseCase || !this.threadStateRepository) {
+            vscode.window.showErrorMessage('Delete thread use case not available');
+            return;
+        }
+
+        // Get thread info for confirmation
+        const thread = await this.threadStateRepository.findById(threadId);
+        if (!thread) return;
+
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (!workspaceRoot) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+
+        // Show confirmation dialog
+        const options: vscode.MessageItem[] = [
+            { title: 'Keep Worktree' },
+            { title: 'Delete Worktree Too' },
+            { title: 'Cancel', isCloseAffordance: true }
+        ];
+
+        const result = await vscode.window.showWarningMessage(
+            `Delete thread "${thread.name}"?`,
+            { modal: true },
+            ...options
+        );
+
+        if (!result || result.title === 'Cancel') return;
+
+        // Execute deletion
+        const deleteAll = result.title === 'Delete Worktree Too';
+        await this.deleteThreadUseCase.execute({
+            threadId,
+            workspaceRoot,
+            closeTerminal: true, // Always close terminal when deleting thread
+            removeWorktree: deleteAll
+        });
+
+        // Remove session from AIDetectionController's sessions Map
+        // This is needed even when terminal is kept, since thread state is deleted
+        if (this.removeSession && thread.terminalId) {
+            this.removeSession(thread.terminalId);
+        }
+
+        // Handle selection if deleted thread was selected
+        // Use terminalId since that's what selectedThreadId stores
+        if (this.selectedThreadId === thread.terminalId) {
+            await this.selectNextThread();
+        }
+
+        // Refresh UI
+        this.refresh();
+    }
+
+    /**
+     * Open thread's worktree in a new editor window.
+     */
+    async openInEditor(threadId: string): Promise<void> {
+        if (!this.openInEditorUseCase) {
+            vscode.window.showErrorMessage('Open in editor use case not available');
+            return;
+        }
+
+        const result = await this.openInEditorUseCase.execute({ threadId });
+        if (!result.success) {
+            vscode.window.showErrorMessage(`Failed to open in editor: ${result.error}`);
+        }
+    }
+
+    /**
+     * Select next available thread after deletion.
+     */
+    private async selectNextThread(): Promise<void> {
+        const sessions = this.getSessions();
+        if (sessions.size > 0) {
+            const [firstId] = sessions.keys();
+            await this.selectThread(firstId);
+        } else {
+            this.selectedThreadId = null;
+            // Clear Code Squad panel or show empty state
         }
     }
 

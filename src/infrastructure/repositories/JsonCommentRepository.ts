@@ -83,6 +83,18 @@ export class JsonCommentRepository implements ICommentRepository {
         return true;
     }
 
+    async deleteByThreadId(threadId: string): Promise<number> {
+        const initialCount = this.comments.length;
+        this.comments = this.comments.filter(c => c.threadId !== threadId);
+        const deletedCount = initialCount - this.comments.length;
+
+        if (deletedCount > 0) {
+            this.persistComments();
+        }
+
+        return deletedCount;
+    }
+
     private loadCommentsFrom(filePath: string): void {
         if (!fs.existsSync(filePath)) {
             return;
