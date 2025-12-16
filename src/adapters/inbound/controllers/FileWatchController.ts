@@ -7,7 +7,6 @@ import { SessionContext } from '../../../application/ports/outbound/SessionConte
 import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { DiffDisplayState, ChunkDisplayInfo, FileInfo } from '../../../application/ports/outbound/PanelState';
 import { DiffResult } from '../../../domain/entities/Diff';
-import { GitExtension, GitAPI, Repository, Change, Status } from '../../../types/git';
 import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 import { ITrackFileOwnershipUseCase } from '../../../application/ports/inbound/ITrackFileOwnershipUseCase';
 import {
@@ -16,14 +15,6 @@ import {
     FileChangeEvent,
     coalesceFileEvents
 } from '../../../application/services/BatchEventCollector';
-
-/** Pending debounced event data */
-interface DebouncedEventData {
-    uri: vscode.Uri;
-    relativePath: string;
-    fileName: string;
-    timestamp: number;
-}
 
 /**
  * Fixed-size circular buffer to prevent memory growth.
@@ -80,14 +71,12 @@ class CircularBuffer<T> {
 interface SessionWorktreeWatcher {
     terminalId: string;
     workspaceRoot: string;
-    repository: Repository | undefined;
-    stateSubscription: vscode.Disposable | undefined;
     headWatcher: vscode.FileSystemWatcher | undefined;
     lastHeadCommit: string | undefined;
-    /** FileSystemWatcher for worktree directory (fallback when git extension unavailable) */
+    /** FileSystemWatcher for worktree directory */
     fileWatcher: vscode.FileSystemWatcher | undefined;
-    /** Debounce timer for file watcher events */
-    fileWatcherDebounceTimer: NodeJS.Timeout | undefined;
+    /** Batch event collector for worktree file changes */
+    batchCollector: IBatchEventCollector | undefined;
     /** Whitelist watchers for this worktree session */
     whitelistWatchers: vscode.FileSystemWatcher[];
 }
@@ -104,12 +93,7 @@ export class FileWatchController {
     /** 모든 활성 세션 참조 */
     private sessions: Map<string, SessionContext> | undefined;
 
-    // ===== Git Extension API =====
-    private gitAPI: GitAPI | undefined;
-    private repository: Repository | undefined;
-    private repositoryStateSubscription: vscode.Disposable | undefined;
-    private gitExtensionAvailable: boolean = false;
-    /** Deduplication map for rapid git state events */
+    /** Deduplication map for rapid file events */
     private lastProcessedChanges: Map<string, number> = new Map();
     /** Watchers for whitelisted file patterns */
     private whitelistWatchers: vscode.FileSystemWatcher[] = [];
@@ -127,14 +111,6 @@ export class FileWatchController {
     private lastStatsLog = Date.now();
     private pendingEvents = 0;
     private maxPendingEvents = 0;
-
-    // ===== Debounce (legacy, being phased out) =====
-    /** Per-file debounce timers */
-    private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
-    /** Stored event data for pending debounced events */
-    private pendingEventData: Map<string, DebouncedEventData> = new Map();
-    /** Current debounce delay in ms (0 = disabled) */
-    private debounceMs: number = 300;
 
     // ===== Batch Event Collection =====
     /** Batch event collector for coalescing file changes */
@@ -328,8 +304,8 @@ export class FileWatchController {
     /**
      * Get the current file watch mode.
      */
-    getWatchMode(): 'git+whitelist' | 'whitelist-only' {
-        return this.gitExtensionAvailable ? 'git+whitelist' : 'whitelist-only';
+    getWatchMode(): 'filesystem' {
+        return 'filesystem';
     }
 
     private initialize(): void {
@@ -341,7 +317,6 @@ export class FileWatchController {
         this.workspaceRoot = workspaceFolders[0].uri.fsPath;
         this.loadGitignore();
         this.loadIncludePatterns();
-        this.loadDebounceConfig();
     }
 
     private loadGitignore(): void {
@@ -363,14 +338,6 @@ export class FileWatchController {
     private loadIncludePatterns(): void {
         // Delegate to rebuildIncludePatterns to handle both global and thread patterns
         this.rebuildIncludePatterns();
-    }
-
-    private loadDebounceConfig(): void {
-        const config = vscode.workspace.getConfiguration('codeSquad');
-        const configValue = config.get<number>('fileWatchDebounceMs', 300);
-        // Clamp to valid range
-        this.debounceMs = Math.max(0, Math.min(2000, configValue));
-        this.log(`Debounce config loaded: ${this.debounceMs}ms`);
     }
 
     private loadBatchConfig(): void {
@@ -395,161 +362,75 @@ export class FileWatchController {
         this.log(`BatchEventCollector initialized: window=${this.batchWindowMs}ms, idle=${this.batchIdleMs}ms`);
     }
 
-    /**
-     * Initialize Git Extension API for efficient file change tracking.
-     * Falls back to whitelist-only mode if git extension unavailable.
-     */
-    private async initGitExtension(): Promise<void> {
-        const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+    /** Main workspace FileSystemWatcher */
+    private mainWorkspaceWatcher: vscode.FileSystemWatcher | undefined;
 
-        if (!gitExtension) {
-            this.gitExtensionAvailable = false;
-            this.log('Git extension not found, using whitelist-only mode');
+    /**
+     * Setup FileSystemWatcher for the main workspace.
+     * Watches all files and uses BatchEventCollector for efficient batching.
+     */
+    private setupMainWorkspaceWatcher(context: vscode.ExtensionContext): void {
+        if (!this.workspaceRoot) {
+            this.log('No workspace root, skipping main workspace watcher');
             return;
         }
 
-        if (!gitExtension.isActive) {
-            try {
-                await gitExtension.activate();
-            } catch (error) {
-                this.gitExtensionAvailable = false;
-                this.log('Failed to activate git extension, using whitelist-only mode');
-                this.logError('initGitExtension', error);
+        // Dispose existing watcher if any
+        this.mainWorkspaceWatcher?.dispose();
+
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            this.log('No workspace folders, skipping main workspace watcher');
+            return;
+        }
+
+        this.log(`Setting up FileSystemWatcher for main workspace: ${this.workspaceRoot}`);
+
+        // Watch all files in the workspace
+        const pattern = new vscode.RelativePattern(workspaceFolders[0], '**/*');
+        this.mainWorkspaceWatcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+        const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
+            if (!this.batchCollector) return;
+
+            const relativePath = vscode.workspace.asRelativePath(uri);
+
+            // Skip .git directory
+            if (relativePath.startsWith('.git/') || relativePath.startsWith('.git\\')) {
                 return;
             }
-        }
 
-        this.gitAPI = gitExtension.exports.getAPI(1);
-
-        if (!this.gitAPI) {
-            this.gitExtensionAvailable = false;
-            this.log('Git API not available, using whitelist-only mode');
-            return;
-        }
-
-        // Find repository for workspace
-        this.repository = this.gitAPI.repositories.find(
-            repo => repo.rootUri.fsPath === this.workspaceRoot
-        );
-
-        if (!this.repository) {
-            this.gitExtensionAvailable = false;
-            this.log(`No git repository found for: ${this.workspaceRoot}`);
-            this.log('Using whitelist-only mode');
-            // Listen for repository to be opened later
-            this.gitAPI.onDidOpenRepository(repo => {
-                if (repo.rootUri.fsPath === this.workspaceRoot) {
-                    this.repository = repo;
-                    this.gitExtensionAvailable = true;
-                    this.setupGitStateWatcher();
-                    this.log('Git repository detected, enabled git-based file watching');
-                }
-            });
-            return;
-        }
-
-        this.gitExtensionAvailable = true;
-        this.log(`Git extension initialized: ${this.repository.rootUri.fsPath}`);
-    }
-
-    /**
-     * Subscribe to repository state changes for efficient file change tracking.
-     */
-    private setupGitStateWatcher(context?: vscode.ExtensionContext): void {
-        if (!this.repository) return;
-
-        this.repositoryStateSubscription = this.repository.state.onDidChange(() => {
-            this.handleGitStateChange();
-        });
-
-        if (context) {
-            context.subscriptions.push(this.repositoryStateSubscription);
-        }
-        this.log('Git state watcher subscribed');
-    }
-
-    /**
-     * Handle git repository state change - process changed files.
-     * Deduplicates files that appear in both workingTreeChanges and indexChanges.
-     * Uses BatchEventCollector to batch events for efficient processing.
-     */
-    private handleGitStateChange(): void {
-        if (!this.repository || !this.batchCollector) return;
-
-        const state = this.repository.state;
-        const changes = [...state.workingTreeChanges, ...state.indexChanges];
-
-        // Deduplicate by file path
-        const uniqueChanges = new Map<string, Change>();
-        for (const change of changes) {
-            const fsPath = change.uri.fsPath;
-            if (!uniqueChanges.has(fsPath)) {
-                uniqueChanges.set(fsPath, change);
+            // Skip gitignored files (whitelist watcher handles those separately)
+            if (this.gitignore.ignores(relativePath) && !this.includePatterns.ignores(relativePath)) {
+                return;
             }
-        }
-
-        if (uniqueChanges.size === 0) {
-            return;
-        }
-
-        this.log(`[Git] State change: ${uniqueChanges.size} unique files`);
-
-        // Add each changed file to batch collector
-        for (const [fsPath, change] of uniqueChanges) {
-            // Skip if recently processed (dedup rapid git events)
-            const now = Date.now();
-            const lastProcessed = this.lastProcessedChanges.get(fsPath);
-            if (lastProcessed && now - lastProcessed < 100) {
-                continue;
-            }
-            this.lastProcessedChanges.set(fsPath, now);
 
             this.eventCount++;
-            this.eventCountWindow.push(now);
+            this.eventCountWindow.push(Date.now());
 
-            // Map git status to event type
-            const eventType = this.mapGitStatusToEventType(change.status);
-
-            this.log(`[Git] Event #${this.eventCount}: ${vscode.workspace.asRelativePath(change.uri)} (status=${Status[change.status]})`);
+            this.log(`[Main:FSW] Event #${this.eventCount}: ${relativePath} (type=${eventType})`);
             this.logStats();
 
-            // Add to batch collector instead of processing immediately
+            // Add to batch collector
             this.batchCollector.addEvent({
-                uri: { fsPath },
+                uri: { fsPath: uri.fsPath },
                 type: eventType,
-                timestamp: now,
+                timestamp: Date.now(),
                 source: 'git'
             });
-        }
+        };
 
-        // Cleanup old entries from lastProcessedChanges (older than 5 seconds)
-        const cutoff = Date.now() - 5000;
-        for (const [filePath, timestamp] of this.lastProcessedChanges) {
-            if (timestamp < cutoff) {
-                this.lastProcessedChanges.delete(filePath);
-            }
-        }
-    }
+        this.mainWorkspaceWatcher.onDidChange((uri) => handleFileChange(uri, 'change'));
+        this.mainWorkspaceWatcher.onDidCreate((uri) => handleFileChange(uri, 'create'));
 
-    /**
-     * Map git Status enum to FileChangeEvent type.
-     */
-    private mapGitStatusToEventType(status: Status): 'create' | 'change' | 'delete' {
-        // Status.INDEX_ADDED = 1, Status.UNTRACKED = 7
-        if (status === Status.INDEX_ADDED || status === Status.UNTRACKED) {
-            return 'create';
-        }
-        // Status.DELETED = 6, Status.INDEX_DELETED = 2
-        if (status === Status.DELETED || status === Status.INDEX_DELETED) {
-            return 'delete';
-        }
-        // All others (MODIFIED, INDEX_MODIFIED, etc.)
-        return 'change';
+        context.subscriptions.push(this.mainWorkspaceWatcher);
+
+        this.log('Main workspace FileSystemWatcher created');
     }
 
     /**
      * Setup per-pattern file watchers for whitelisted files.
-     * Only these patterns will trigger events when git extension is unavailable.
+     * These track gitignored files that match includeFiles patterns.
      */
     private setupWhitelistWatchers(context: vscode.ExtensionContext): void {
         // Clear existing watchers
@@ -647,43 +528,28 @@ export class FileWatchController {
     }
 
     /**
-     * Cleanup all debounce timers, watchers, and pending data.
+     * Cleanup all watchers and pending data.
      * Called when extension deactivates.
      */
     dispose(): void {
-        const timerCount = this.debounceTimers.size;
-
         // Dispose batch collector
         this.batchCollector?.dispose();
         this.batchCollector = undefined;
 
-        // Clear all pending debounce timers
-        for (const [filePath, timer] of this.debounceTimers) {
-            clearTimeout(timer);
-            this.log(`[Debounce] Cleanup: ${filePath}`);
-        }
-        this.debounceTimers.clear();
-        this.pendingEventData.clear();
+        // Dispose main workspace watcher
+        this.mainWorkspaceWatcher?.dispose();
+        this.mainWorkspaceWatcher = undefined;
 
         // Dispose whitelist watchers
         this.disposeWhitelistWatchers();
 
-        // Dispose all session worktree watchers (including native fs.watch)
+        // Dispose all session worktree watchers
         for (const [terminalId] of this.sessionWorktreeWatchers) {
             this.unregisterSessionWorkspace(terminalId);
         }
 
-        // Clear git state tracking
+        // Clear dedup tracking
         this.lastProcessedChanges.clear();
-
-        // Clear git references (subscriptions auto-disposed via context)
-        this.gitAPI = undefined;
-        this.repository = undefined;
-        this.gitExtensionAvailable = false;
-
-        if (timerCount > 0) {
-            this.log(`Disposed: cleared ${timerCount} pending debounce timers`);
-        }
 
         this.log('FileWatchController disposed');
     }
@@ -744,100 +610,6 @@ export class FileWatchController {
         }
 
         return false;
-    }
-
-    /**
-     * Process a file change event (after debouncing).
-     * Files reaching this point are already filtered by git extension or whitelist watchers.
-     *
-     * Single Panel Architecture:
-     * - Only update the currently focused thread's session
-     * - Other sessions are updated via their own worktree watchers if applicable
-     */
-    private async processFileChange(data: DebouncedEventData): Promise<void> {
-        const startTime = Date.now();
-        const { uri, relativePath, fileName } = data;
-
-        // Check file exists and is not a directory
-        try {
-            const stat = await vscode.workspace.fs.stat(uri);
-            if (stat.type === vscode.FileType.Directory) {
-                this.log(`  Skip: directory`);
-                return;
-            }
-        } catch {
-            this.log(`  Skip: file not found or inaccessible`);
-            return;
-        }
-
-        // Skip internal/excluded files
-        if (relativePath.includes('code-squad-comments.json') ||
-            relativePath.startsWith('.git/') ||
-            relativePath.startsWith('.git\\')) {
-            this.log(`  Skip: excluded file`);
-            return;
-        }
-
-        // Skip if no active sessions
-        if (!this.sessions || this.sessions.size === 0) {
-            this.log(`  Skip: no sessions (size=${this.sessions?.size ?? 'undefined'})`);
-            return;
-        }
-
-        // Single Panel Architecture: Only update the focused thread
-        // If no thread is focused, update sessions that match the main workspace
-        const focusedThreadId = this.currentThreadId;
-
-        this.log(`  Processing: ${relativePath} (focusedThread=${focusedThreadId ?? 'none'})`);
-
-        try {
-            // Git status query (once)
-            const gitStart = Date.now();
-            let status: 'added' | 'modified' | 'deleted' = 'modified';
-            if (this.gitPort && this.workspaceRoot) {
-                status = await this.gitPort.getFileStatus(this.workspaceRoot, relativePath);
-            }
-            const gitTime = Date.now() - gitStart;
-            if (gitTime > 100) {
-                this.log(`  ⚠️ Slow git status: ${gitTime}ms`);
-            }
-
-            // Update only sessions that use the main workspace (not worktree)
-            // Worktree sessions are handled by their own FileSystemWatcher
-            for (const [terminalId, sessionContext] of this.sessions) {
-                // Skip sessions with different workspaceRoot (they have their own watchers)
-                if (sessionContext.workspaceRoot && sessionContext.workspaceRoot !== this.workspaceRoot) {
-                    continue;
-                }
-
-                const notifyStart = Date.now();
-                await this.notifyFileChange(sessionContext, relativePath, fileName, status);
-                const notifyTime = Date.now() - notifyStart;
-                if (notifyTime > 100) {
-                    this.log(`  ⚠️ Slow notifyFileChange for ${terminalId}: ${notifyTime}ms`);
-                }
-            }
-
-            // Track file ownership for the focused thread
-            if (focusedThreadId && this.trackFileOwnershipUseCase) {
-                const focusedSession = this.sessions?.get(focusedThreadId);
-                if (focusedSession?.threadState?.threadId) {
-                    await this.trackFileOwnershipUseCase.execute({
-                        filePath: relativePath,
-                        threadId: focusedSession.threadState.threadId
-                    });
-                    this.log(`  Tracked ownership: ${relativePath} -> ${focusedSession.threadState.name}`);
-                }
-            }
-
-            this.processedCount++;
-            const totalTime = Date.now() - startTime;
-            if (totalTime > 200) {
-                this.log(`  ⚠️ Slow event processing: ${totalTime}ms total`);
-            }
-        } catch (error) {
-            this.logError('processFileChange', error);
-        }
     }
 
     /**
@@ -928,23 +700,16 @@ export class FileWatchController {
         this.debugChannel = vscode.window.createOutputChannel('Code Squad FileWatch');
         context.subscriptions.push(this.debugChannel);
 
-        this.log('Activating file watch with hybrid approach (Git Extension + Whitelist)');
+        this.log('Activating file watch with FileSystemWatcher + BatchEventCollector');
 
         // Load batch config and initialize collector
         this.loadBatchConfig();
         this.initBatchCollector();
 
-        // Initialize Git Extension for efficient file change tracking (async, non-blocking)
-        this.initGitExtension().then(() => {
-            if (this.repository) {
-                this.setupGitStateWatcher(context);
-                this.log('Git-based file watching enabled');
-            } else {
-                this.log('No git repository, using whitelist-only mode');
-            }
-        });
+        // Setup main workspace FileSystemWatcher
+        this.setupMainWorkspaceWatcher(context);
 
-        // Setup whitelist watchers (always active, regardless of git extension)
+        // Setup whitelist watchers (for gitignored files that should be tracked)
         this.setupWhitelistWatchers(context);
 
         // Watch for configuration changes
@@ -954,10 +719,6 @@ export class FileWatchController {
                     this.log('includeFiles configuration changed');
                     this.loadIncludePatterns();
                     this.setupWhitelistWatchers(context);
-                }
-                if (e.affectsConfiguration('codeSquad.fileWatchDebounceMs')) {
-                    this.log('fileWatchDebounceMs configuration changed');
-                    this.loadDebounceConfig();
                 }
                 if (e.affectsConfiguration('codeSquad.fileWatchBatchWindowMs') ||
                     e.affectsConfiguration('codeSquad.fileWatchBatchIdleMs')) {
@@ -1242,75 +1003,62 @@ export class FileWatchController {
         const watcher: SessionWorktreeWatcher = {
             terminalId,
             workspaceRoot: sessionWorkspaceRoot,
-            repository: undefined,
-            stateSubscription: undefined,
             headWatcher: undefined,
             lastHeadCommit: undefined,
             fileWatcher: undefined,
-            fileWatcherDebounceTimer: undefined,
+            batchCollector: undefined,
             whitelistWatchers: [],
         };
 
-        // Find git repository for this worktree
-        let useNativeWatcher = true;
-        if (this.gitAPI) {
-            watcher.repository = this.gitAPI.repositories.find(
-                repo => repo.rootUri.fsPath === sessionWorkspaceRoot
+        // Setup FileSystemWatcher for worktree directory
+        this.log(`[Worktree] Setting up FileSystemWatcher for ${sessionWorkspaceRoot}`);
+        try {
+            // Initialize batch collector for this worktree session
+            watcher.batchCollector = new BatchEventCollector({
+                batchWindowMs: this.batchWindowMs,
+                batchIdleMs: this.batchIdleMs
+            });
+            watcher.batchCollector.onBatchReady((events) => {
+                this.processWorktreeBatch(terminalId, events, sessionWorkspaceRoot);
+            });
+            this.log(`[Worktree] BatchEventCollector initialized for ${sessionWorkspaceRoot}`);
+
+            // Watch all files in the worktree directory
+            const worktreePattern = new vscode.RelativePattern(
+                vscode.Uri.file(sessionWorkspaceRoot),
+                '**/*'
             );
+            const fileWatcher = vscode.workspace.createFileSystemWatcher(worktreePattern);
 
-            if (watcher.repository) {
-                this.log(`[Worktree] Found repository for ${sessionWorkspaceRoot}`);
-                // Subscribe to repository state changes
-                watcher.stateSubscription = watcher.repository.state.onDidChange(() => {
-                    this.handleWorktreeGitStateChange(terminalId);
-                });
-                useNativeWatcher = false;
-            } else {
-                this.log(`[Worktree] No repository found for ${sessionWorkspaceRoot}, using FileSystemWatcher`);
-            }
-        }
+            const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
+                const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
+                this.log(`[Worktree:FSW] Event: ${relativePath}, session: ${terminalId}, type: ${eventType}`);
 
-        // Use VSCode FileSystemWatcher with RelativePattern for worktree directories
-        // This works better than native fs.watch in VSCode extension context
-        if (useNativeWatcher) {
-            this.log(`[Worktree] Setting up VSCode FileSystemWatcher for ${sessionWorkspaceRoot}`);
-            try {
-                // Watch all files in the worktree directory
-                const worktreePattern = new vscode.RelativePattern(
-                    vscode.Uri.file(sessionWorkspaceRoot),
-                    '**/*'
-                );
-                const fileWatcher = vscode.workspace.createFileSystemWatcher(worktreePattern);
+                // Skip .git directory
+                if (relativePath.includes('.git')) {
+                    this.log(`[Worktree:FSW] Skipping .git: ${relativePath}`);
+                    return;
+                }
 
-                const handleFileChange = (uri: vscode.Uri) => {
-                    const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
-                    this.log(`[Worktree:FSW] Event: ${relativePath}, session: ${terminalId}`);
+                // Add to batch collector
+                if (watcher.batchCollector) {
+                    watcher.batchCollector.addEvent({
+                        uri: { fsPath: uri.fsPath },
+                        type: eventType,
+                        timestamp: Date.now(),
+                        source: 'whitelist'
+                    });
+                }
+            };
 
-                    // Skip .git directory
-                    if (relativePath.includes('.git')) {
-                        this.log(`[Worktree:FSW] Skipping .git: ${relativePath}`);
-                        return;
-                    }
+            fileWatcher.onDidChange((uri) => handleFileChange(uri, 'change'));
+            fileWatcher.onDidCreate((uri) => handleFileChange(uri, 'create'));
 
-                    // Debounce file changes (300ms)
-                    if (watcher.fileWatcherDebounceTimer) {
-                        clearTimeout(watcher.fileWatcherDebounceTimer);
-                    }
-                    watcher.fileWatcherDebounceTimer = setTimeout(() => {
-                        this.log(`[Worktree:FSW] Processing: ${relativePath}`);
-                        this.handleWorktreeFileChange(terminalId, uri);
-                    }, 300);
-                };
+            watcher.fileWatcher = fileWatcher;
 
-                fileWatcher.onDidChange(handleFileChange);
-                fileWatcher.onDidCreate(handleFileChange);
-
-                watcher.fileWatcher = fileWatcher;
-
-                this.log(`[Worktree] VSCode FileSystemWatcher created for ${sessionWorkspaceRoot}`);
-            } catch (error) {
-                this.logError('registerSessionWorkspace:FileSystemWatcher', error);
-            }
+            this.log(`[Worktree] FileSystemWatcher created for ${sessionWorkspaceRoot}`);
+        } catch (error) {
+            this.logError('registerSessionWorkspace:FileSystemWatcher', error);
         }
 
         // Setup git HEAD watcher for this worktree
@@ -1376,12 +1124,12 @@ export class FileWatchController {
             );
             const patternWatcher = vscode.workspace.createFileSystemWatcher(relativePattern);
 
-            const handleWhitelistChange = (uri: vscode.Uri) => {
-                this.handleWorktreeWhitelistFileChange(terminalId, uri, sessionWorkspaceRoot);
-            };
-
-            patternWatcher.onDidChange(handleWhitelistChange);
-            patternWatcher.onDidCreate(handleWhitelistChange);
+            patternWatcher.onDidChange((uri) => {
+                this.handleWorktreeWhitelistFileChange(terminalId, uri, sessionWorkspaceRoot, 'change');
+            });
+            patternWatcher.onDidCreate((uri) => {
+                this.handleWorktreeWhitelistFileChange(terminalId, uri, sessionWorkspaceRoot, 'create');
+            });
 
             watcher.whitelistWatchers.push(patternWatcher);
             this.log(`[Worktree] Whitelist watcher: ${pattern} for ${sessionWorkspaceRoot}`);
@@ -1390,27 +1138,29 @@ export class FileWatchController {
 
     /**
      * Handle whitelist file change in a worktree session.
+     * Uses batch collector for efficient batching of multiple file changes.
      */
     private handleWorktreeWhitelistFileChange(
         terminalId: string,
         uri: vscode.Uri,
-        sessionWorkspaceRoot: string
+        sessionWorkspaceRoot: string,
+        eventType: 'create' | 'change' = 'change'
     ): void {
         const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
-        this.log(`[Worktree:Whitelist] Event: ${relativePath}, session: ${terminalId}`);
+        this.log(`[Worktree:Whitelist] Event: ${relativePath}, session: ${terminalId}, type: ${eventType}`);
 
-        // Get the watcher for debouncing
         const watcher = this.sessionWorktreeWatchers.get(terminalId);
         if (!watcher) return;
 
-        // Debounce (use same timer as file watcher)
-        if (watcher.fileWatcherDebounceTimer) {
-            clearTimeout(watcher.fileWatcherDebounceTimer);
+        // Add to batch collector instead of debouncing
+        if (watcher.batchCollector) {
+            watcher.batchCollector.addEvent({
+                uri: { fsPath: uri.fsPath },
+                type: eventType,
+                timestamp: Date.now(),
+                source: 'whitelist'
+            });
         }
-        watcher.fileWatcherDebounceTimer = setTimeout(() => {
-            this.log(`[Worktree:Whitelist] Processing: ${relativePath}`);
-            this.handleWorktreeFileChange(terminalId, uri);
-        }, this.debounceMs || 300);
     }
 
     /**
@@ -1425,12 +1175,9 @@ export class FileWatchController {
         this.log(`[Worktree] Unregistering session ${terminalId}`);
 
         // Dispose resources
-        watcher.stateSubscription?.dispose();
         watcher.headWatcher?.dispose();
         watcher.fileWatcher?.dispose();
-        if (watcher.fileWatcherDebounceTimer) {
-            clearTimeout(watcher.fileWatcherDebounceTimer);
-        }
+        watcher.batchCollector?.dispose();
 
         // Dispose whitelist watchers
         for (const w of watcher.whitelistWatchers) {
@@ -1442,7 +1189,96 @@ export class FileWatchController {
     }
 
     /**
+     * Process a batch of file change events from a worktree session.
+     * Called by BatchEventCollector when batch is ready.
+     */
+    private async processWorktreeBatch(
+        terminalId: string,
+        events: FileChangeEvent[],
+        sessionWorkspaceRoot: string
+    ): Promise<void> {
+        const startTime = Date.now();
+        const coalesced = coalesceFileEvents(events);
+
+        if (coalesced.length === 0) {
+            this.log(`[Worktree:Batch] Empty batch after coalescing for session ${terminalId}`);
+            return;
+        }
+
+        this.log(`[Worktree:Batch] Processing ${coalesced.length} files (from ${events.length} events) for session ${terminalId}`);
+
+        const session = this.sessions?.get(terminalId);
+        if (!session) {
+            this.log(`[Worktree:Batch] Skip: session ${terminalId} not found`);
+            return;
+        }
+
+        try {
+            // Collect FileInfo for batch update
+            const fileInfos: FileInfo[] = [];
+
+            for (const event of coalesced) {
+                const relativePath = path.relative(sessionWorkspaceRoot, event.uri.fsPath);
+                const fileName = path.basename(event.uri.fsPath);
+
+                // Skip if path is outside worktree
+                if (relativePath.startsWith('..')) {
+                    continue;
+                }
+
+                const isWhitelisted = this.isWhitelisted(relativePath, session);
+
+                // Skip gitignored files only when not whitelisted
+                if (this.gitignore.ignores(relativePath) && !isWhitelisted) {
+                    continue;
+                }
+
+                // Map event type to file status
+                const status = event.type === 'create' ? 'added'
+                             : event.type === 'delete' ? 'deleted'
+                             : 'modified';
+
+                fileInfos.push({
+                    path: relativePath,
+                    name: fileName,
+                    status,
+                });
+            }
+
+            if (fileInfos.length === 0) {
+                this.log(`[Worktree:Batch] No valid files after filtering for session ${terminalId}`);
+                return;
+            }
+
+            // Use batch update for single render
+            session.stateManager.updateSessionFilesBatch(fileInfos);
+
+            // Track file ownership for this worktree session
+            if (session.threadState?.threadId && this.trackFileOwnershipUseCase) {
+                for (const fileInfo of fileInfos) {
+                    if (fileInfo.status !== 'deleted') {
+                        await this.trackFileOwnershipUseCase.execute({
+                            filePath: fileInfo.path,
+                            threadId: session.threadState.threadId
+                        });
+                    }
+                }
+            }
+
+            const totalTime = Date.now() - startTime;
+            this.log(`[Worktree:Batch] Completed: ${fileInfos.length} files in ${totalTime}ms for session ${terminalId}`);
+
+            if (totalTime > 200) {
+                this.log(`[Worktree:Batch] ⚠️ Slow batch processing: ${totalTime}ms total`);
+            }
+        } catch (error) {
+            this.logError('processWorktreeBatch', error);
+        }
+    }
+
+    /**
      * Handle file change in worktree (via FileSystemWatcher).
+     * @deprecated Use processWorktreeBatch for batch processing
      */
     private async handleWorktreeFileChange(terminalId: string, uri: vscode.Uri): Promise<void> {
         const watcher = this.sessionWorktreeWatchers.get(terminalId);
@@ -1485,82 +1321,6 @@ export class FileWatchController {
             }
         } catch (error) {
             this.logError('handleWorktreeFileChange', error);
-        }
-    }
-
-    /**
-     * Handle git state change for a specific worktree session.
-     */
-    private async handleWorktreeGitStateChange(terminalId: string): Promise<void> {
-        const watcher = this.sessionWorktreeWatchers.get(terminalId);
-        if (!watcher?.repository) return;
-
-        const session = this.sessions?.get(terminalId);
-        if (!session) return;
-
-        const state = watcher.repository.state;
-        const changes = [...state.workingTreeChanges, ...state.indexChanges];
-
-        // Deduplicate by file path
-        const uniqueChanges = new Map<string, Change>();
-        for (const change of changes) {
-            const fsPath = change.uri.fsPath;
-            if (!uniqueChanges.has(fsPath)) {
-                uniqueChanges.set(fsPath, change);
-            }
-        }
-
-        if (uniqueChanges.size === 0) {
-            return;
-        }
-
-        this.log(`[Worktree] Session ${terminalId} git state change: ${uniqueChanges.size} unique files`);
-
-        // Process each changed file for this specific session
-        for (const [fsPath, change] of uniqueChanges) {
-            // Skip if recently processed
-            const now = Date.now();
-            const dedupeKey = `${terminalId}:${fsPath}`;
-            const lastProcessed = this.lastProcessedChanges.get(dedupeKey);
-            if (lastProcessed && now - lastProcessed < 100) {
-                continue;
-            }
-            this.lastProcessedChanges.set(dedupeKey, now);
-
-            // Calculate relative path from session's workspaceRoot
-            const relativePath = path.relative(watcher.workspaceRoot, fsPath);
-            const fileName = path.basename(relativePath);
-
-            this.eventCount++;
-            this.eventCountWindow.push(now);
-
-            this.log(`[Worktree] Event #${this.eventCount}: ${relativePath} (session=${terminalId}, status=${Status[change.status]})`);
-
-            // Get git status
-            let status: 'added' | 'modified' | 'deleted' = 'modified';
-            if (this.gitPort) {
-                status = await this.gitPort.getFileStatus(watcher.workspaceRoot, relativePath);
-            }
-
-            // Notify only this session
-            await this.notifyFileChange(session, relativePath, fileName, status);
-
-            // Track file ownership for this worktree session
-            if (session.threadState?.threadId && this.trackFileOwnershipUseCase) {
-                await this.trackFileOwnershipUseCase.execute({
-                    filePath: relativePath,
-                    threadId: session.threadState.threadId
-                });
-                this.log(`[Worktree] Tracked ownership: ${relativePath} -> ${session.threadState.name}`);
-            }
-        }
-
-        // Cleanup old dedup entries
-        const cutoff = Date.now() - 5000;
-        for (const [key, timestamp] of this.lastProcessedChanges) {
-            if (timestamp < cutoff) {
-                this.lastProcessedChanges.delete(key);
-            }
         }
     }
 
