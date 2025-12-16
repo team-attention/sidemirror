@@ -11,12 +11,6 @@ import { GitExtension, GitAPI, Repository, Change, Status } from '../../../types
 import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 import { ITrackFileOwnershipUseCase } from '../../../application/ports/inbound/ITrackFileOwnershipUseCase';
 
-/** Native fs.watch wrapper for directories outside VSCode workspace */
-interface NativeFsWatcher {
-    watcher: fs.FSWatcher;
-    debounceTimer: NodeJS.Timeout | undefined;
-}
-
 /** Pending debounced event data */
 interface DebouncedEventData {
     uri: vscode.Uri;
@@ -88,8 +82,6 @@ interface SessionWorktreeWatcher {
     fileWatcher: vscode.FileSystemWatcher | undefined;
     /** Debounce timer for file watcher events */
     fileWatcherDebounceTimer: NodeJS.Timeout | undefined;
-    /** Native fs.watch for directories outside VSCode workspace */
-    nativeFsWatcher: NativeFsWatcher | undefined;
 }
 
 export class FileWatchController {
@@ -1132,7 +1124,6 @@ export class FileWatchController {
             lastHeadCommit: undefined,
             fileWatcher: undefined,
             fileWatcherDebounceTimer: undefined,
-            nativeFsWatcher: undefined,
         };
 
         // Find git repository for this worktree
@@ -1150,48 +1141,50 @@ export class FileWatchController {
                 });
                 useNativeWatcher = false;
             } else {
-                this.log(`[Worktree] No repository found for ${sessionWorkspaceRoot}, using native fs.watch`);
+                this.log(`[Worktree] No repository found for ${sessionWorkspaceRoot}, using FileSystemWatcher`);
             }
         }
 
-        // Use native fs.watch for directories outside VSCode workspace
-        // VSCode's FileSystemWatcher only works within the workspace
+        // Use VSCode FileSystemWatcher with RelativePattern for worktree directories
+        // This works better than native fs.watch in VSCode extension context
         if (useNativeWatcher) {
-            this.log(`[Worktree] Setting up native fs.watch for ${sessionWorkspaceRoot}`);
+            this.log(`[Worktree] Setting up VSCode FileSystemWatcher for ${sessionWorkspaceRoot}`);
             try {
-                const nativeWatcher = fs.watch(
-                    sessionWorkspaceRoot,
-                    { recursive: true },
-                    (eventType, filename) => {
-                        if (!filename) return;
-
-                        // Skip .git directory
-                        if (filename.includes('.git')) {
-                            return;
-                        }
-
-                        // Debounce file changes (300ms)
-                        if (watcher.nativeFsWatcher?.debounceTimer) {
-                            clearTimeout(watcher.nativeFsWatcher.debounceTimer);
-                        }
-                        if (watcher.nativeFsWatcher) {
-                            watcher.nativeFsWatcher.debounceTimer = setTimeout(() => {
-                                const fullPath = path.join(sessionWorkspaceRoot, filename);
-                                const uri = vscode.Uri.file(fullPath);
-                                this.handleWorktreeFileChange(terminalId, uri);
-                            }, 300);
-                        }
-                    }
+                // Watch all files in the worktree directory
+                const worktreePattern = new vscode.RelativePattern(
+                    vscode.Uri.file(sessionWorkspaceRoot),
+                    '**/*'
                 );
+                const fileWatcher = vscode.workspace.createFileSystemWatcher(worktreePattern);
 
-                watcher.nativeFsWatcher = {
-                    watcher: nativeWatcher,
-                    debounceTimer: undefined,
+                const handleFileChange = (uri: vscode.Uri) => {
+                    const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
+                    this.log(`[Worktree:FSW] Event: ${relativePath}, session: ${terminalId}`);
+
+                    // Skip .git directory
+                    if (relativePath.includes('.git')) {
+                        this.log(`[Worktree:FSW] Skipping .git: ${relativePath}`);
+                        return;
+                    }
+
+                    // Debounce file changes (300ms)
+                    if (watcher.fileWatcherDebounceTimer) {
+                        clearTimeout(watcher.fileWatcherDebounceTimer);
+                    }
+                    watcher.fileWatcherDebounceTimer = setTimeout(() => {
+                        this.log(`[Worktree:FSW] Processing: ${relativePath}`);
+                        this.handleWorktreeFileChange(terminalId, uri);
+                    }, 300);
                 };
 
-                this.log(`[Worktree] Native fs.watch created for ${sessionWorkspaceRoot}`);
+                fileWatcher.onDidChange(handleFileChange);
+                fileWatcher.onDidCreate(handleFileChange);
+
+                watcher.fileWatcher = fileWatcher;
+
+                this.log(`[Worktree] VSCode FileSystemWatcher created for ${sessionWorkspaceRoot}`);
             } catch (error) {
-                this.logError('registerSessionWorkspace:fs.watch', error);
+                this.logError('registerSessionWorkspace:FileSystemWatcher', error);
             }
         }
 
@@ -1238,18 +1231,6 @@ export class FileWatchController {
         watcher.fileWatcher?.dispose();
         if (watcher.fileWatcherDebounceTimer) {
             clearTimeout(watcher.fileWatcherDebounceTimer);
-        }
-
-        // Close native fs.watch
-        if (watcher.nativeFsWatcher) {
-            if (watcher.nativeFsWatcher.debounceTimer) {
-                clearTimeout(watcher.nativeFsWatcher.debounceTimer);
-            }
-            try {
-                watcher.nativeFsWatcher.watcher.close();
-            } catch (error) {
-                // Ignore close errors
-            }
         }
 
         this.sessionWorktreeWatchers.delete(terminalId);
