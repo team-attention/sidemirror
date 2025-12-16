@@ -138,8 +138,7 @@ export class ThreadListController {
                 context.editCommentUseCase,
                 context.deleteCommentUseCase,
                 context.fetchHNStoriesUseCase,
-                context.generateScopedDiffUseCase,
-                this.threadStateRepository
+                context.generateScopedDiffUseCase
             );
             panel.show();
         }

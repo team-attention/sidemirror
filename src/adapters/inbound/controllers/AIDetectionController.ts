@@ -388,8 +388,7 @@ export class AIDetectionController {
             editCommentUseCase,
             deleteCommentUseCase,
             this.fetchHNStoriesUseCase,
-            generateScopedDiffUseCase,
-            this.threadStateRepository
+            generateScopedDiffUseCase
         );
 
         // State manager → Panel 연결 (현재 포커스된 세션만)
@@ -689,8 +688,7 @@ export class AIDetectionController {
                     context.editCommentUseCase,
                     context.deleteCommentUseCase,
                     context.fetchHNStoriesUseCase,
-                    context.generateScopedDiffUseCase,
-                    this.threadStateRepository
+                    context.generateScopedDiffUseCase
                 );
                 panel.show();
             }
