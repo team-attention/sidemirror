@@ -41,7 +41,8 @@ export class ThreadListController {
         // Register webview view provider
         const registration = vscode.window.registerWebviewViewProvider(
             ThreadListWebviewProvider.viewType,
-            this.webviewProvider
+            this.webviewProvider,
+            { webviewOptions: { retainContextWhenHidden: true } }
         );
         context.subscriptions.push(registration);
         this.disposables.push(registration);
