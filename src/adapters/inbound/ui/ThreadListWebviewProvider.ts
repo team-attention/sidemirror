@@ -202,6 +202,15 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .thread-action-btn:hover{color:var(--vscode-foreground);background:var(--vscode-toolbar-hoverBackground)}
         .thread-action-btn.delete:hover{color:var(--vscode-errorForeground)}
         .empty-msg{padding:8px 12px;color:var(--vscode-descriptionForeground);font-style:italic}
+        /* Drag handle - hover 시 표시 */
+        .drag-handle{display:flex;align-items:center;justify-content:center;width:16px;color:var(--vscode-descriptionForeground);opacity:0;cursor:grab;flex-shrink:0;font-size:10px;letter-spacing:-2px}
+        .thread-item:hover .drag-handle{opacity:1}
+        .thread-item.dragging .drag-handle{cursor:grabbing}
+        /* 드래그 중인 아이템 */
+        .thread-item.dragging{opacity:0.5}
+        /* 드롭 인디케이터 */
+        .thread-item.drag-over-top{box-shadow:inset 0 2px 0 var(--vscode-focusBorder)}
+        .thread-item.drag-over-bottom{box-shadow:inset 0 -2px 0 var(--vscode-focusBorder)}
     </style>
 </head>
 <body>
@@ -255,6 +264,43 @@ const isolationMode = $('isolationMode');
 const threadList = $('threadList');
 
 let workspaceName = '';
+
+// 스레드 순서 관리 (thread id 배열)
+let orderedThreadIds = [];
+
+// 드래그 상태 변수
+let draggedItem = null;
+let draggedIndex = -1;
+let lastThreads = [];
+
+// threads를 orderedThreadIds 순서로 정렬, 새 스레드는 상단에 추가
+function sortThreads(threads) {
+    const result = [];
+    const threadMap = new Map(threads.map(t => [t.id, t]));
+
+    // 기존 순서의 스레드들
+    for (const id of orderedThreadIds) {
+        if (threadMap.has(id)) {
+            result.push(threadMap.get(id));
+            threadMap.delete(id);
+        }
+    }
+
+    // 새 스레드들 (상단에 추가)
+    const newThreads = Array.from(threadMap.values());
+    result.unshift(...newThreads);
+
+    // 순서 업데이트
+    orderedThreadIds = result.map(t => t.id);
+
+    return result;
+}
+
+// 순서 재배치
+function reorderThreads(fromIndex, toIndex) {
+    const [moved] = orderedThreadIds.splice(fromIndex, 1);
+    orderedThreadIds.splice(toIndex, 0, moved);
+}
 
 function updateWorktreePath() {
     if (!worktreePath.dataset.edited && workspaceName) {
@@ -354,14 +400,34 @@ function getStatusTitle(status) {
     }
 }
 
+// 드래그 클린업
+function cleanup() {
+    if (draggedItem) {
+        draggedItem.classList.remove('dragging');
+    }
+    threadList.querySelectorAll('.thread-item').forEach(item => {
+        item.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    draggedItem = null;
+    draggedIndex = -1;
+}
+
 // Render threads
 function render(threads) {
+    lastThreads = threads;
+
     if (!threads.length) {
         threadList.innerHTML = '<div class="empty-msg">No threads yet</div>';
+        orderedThreadIds = [];
         return;
     }
-    threadList.innerHTML = threads.map(t =>
-        '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '" data-thread-id="' + t.threadId + '" data-has-worktree="' + t.hasWorktree + '">' +
+
+    // 순서 적용
+    const sorted = sortThreads(threads);
+
+    threadList.innerHTML = sorted.map(t =>
+        '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '" data-thread-id="' + t.threadId + '" data-has-worktree="' + t.hasWorktree + '" draggable="true">' +
+        '<span class="drag-handle">\u22EE\u22EE</span>' +
         '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
         '<span class="thread-name">' + esc(t.name) + '</span>' +
         '<div class="thread-actions">' +
@@ -372,7 +438,7 @@ function render(threads) {
         '</div>'
     ).join('');
 
-    threadList.querySelectorAll('.thread-item').forEach(el => {
+    threadList.querySelectorAll('.thread-item').forEach((el, index) => {
         const threadId = el.dataset.threadId;
         el.addEventListener('click', () => vscode.postMessage({ type: 'selectThread', id: el.dataset.id }));
         el.querySelector('.terminal').addEventListener('click', (e) => {
@@ -389,6 +455,67 @@ function render(threads) {
         el.querySelector('.delete').addEventListener('click', (e) => {
             e.stopPropagation();
             vscode.postMessage({ type: 'deleteThread', threadId });
+        });
+
+        // dragstart
+        el.addEventListener('dragstart', (e) => {
+            draggedItem = el;
+            draggedIndex = index;
+            el.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', el.dataset.id);
+        });
+
+        // dragover
+        el.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!draggedItem || draggedItem === el) return;
+
+            const rect = el.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            const isAbove = e.clientY < midY;
+
+            // 기존 인디케이터 제거
+            threadList.querySelectorAll('.thread-item').forEach(item => {
+                item.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+
+            // 새 인디케이터 표시
+            el.classList.add(isAbove ? 'drag-over-top' : 'drag-over-bottom');
+        });
+
+        // dragleave
+        el.addEventListener('dragleave', () => {
+            el.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+
+        // drop
+        el.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (!draggedItem || draggedItem === el) return;
+
+            const rect = el.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            const isAbove = e.clientY < midY;
+
+            let targetIndex = index;
+            if (!isAbove && targetIndex < orderedThreadIds.length - 1) {
+                targetIndex++;
+            }
+            if (draggedIndex < targetIndex) {
+                targetIndex--;
+            }
+
+            reorderThreads(draggedIndex, targetIndex);
+
+            // 클린업 및 리렌더
+            cleanup();
+            render(lastThreads);
+        });
+
+        // dragend
+        el.addEventListener('dragend', () => {
+            cleanup();
         });
     });
 }
