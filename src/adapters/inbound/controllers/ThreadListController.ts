@@ -6,6 +6,10 @@ import { CodeSquadPanelAdapter } from '../ui/CodeSquadPanelAdapter';
 import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort';
 import { ICreateThreadUseCase, IsolationMode } from '../../../application/ports/inbound/ICreateThreadUseCase';
 import { IAttachToWorktreeUseCase } from '../../../application/ports/inbound/IAttachToWorktreeUseCase';
+import { IDeleteThreadUseCase } from '../../../application/ports/inbound/IDeleteThreadUseCase';
+import { IRenameThreadUseCase } from '../../../application/ports/inbound/IRenameThreadUseCase';
+import { ISwitchThreadBranchUseCase } from '../../../application/ports/inbound/ISwitchThreadBranchUseCase';
+import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 import { FileWatchController } from './FileWatchController';
 import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
 import { IGitPort, WorktreeInfo } from '../../../application/ports/outbound/IGitPort';
@@ -24,7 +28,11 @@ export class ThreadListController {
         private readonly attachCodeSquad?: (terminalId: string) => Promise<void>,
         private readonly fileWatchController?: FileWatchController,
         private readonly commentRepository?: ICommentRepository,
-        private readonly gitPort?: IGitPort
+        private readonly gitPort?: IGitPort,
+        private readonly deleteThreadUseCase?: IDeleteThreadUseCase,
+        private readonly renameThreadUseCase?: IRenameThreadUseCase,
+        private readonly switchThreadBranchUseCase?: ISwitchThreadBranchUseCase,
+        private readonly threadStateRepository?: IThreadStateRepository
     ) {}
 
     activate(context: vscode.ExtensionContext): void {
@@ -35,7 +43,10 @@ export class ThreadListController {
             (id) => this.selectThread(id),
             (options) => this.createThreadFromInput(options),
             (id) => this.openNewTerminal(id),
-            () => this.attachToWorktree()
+            () => this.attachToWorktree(),
+            (id) => this.deleteThread(id),
+            (id) => this.renameThread(id),
+            (id) => this.switchThreadBranch(id)
         );
 
         // Register webview view provider
@@ -439,6 +450,173 @@ export class ThreadListController {
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to attach to worktree: ${message}`);
+        }
+    }
+
+    /**
+     * Delete a thread with confirmation dialog.
+     */
+    async deleteThread(threadId: string): Promise<void> {
+        if (!this.deleteThreadUseCase || !this.threadStateRepository) {
+            vscode.window.showErrorMessage('Delete thread use case not available');
+            return;
+        }
+
+        // Get thread info for confirmation
+        const thread = await this.threadStateRepository.findById(threadId);
+        if (!thread) return;
+
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (!workspaceRoot) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+
+        // Show confirmation dialog
+        const options: vscode.MessageItem[] = [
+            { title: 'Delete Thread Only' },
+            { title: 'Delete All (incl. Terminal/Worktree)' },
+            { title: 'Cancel', isCloseAffordance: true }
+        ];
+
+        const result = await vscode.window.showWarningMessage(
+            `Delete thread "${thread.name}"?`,
+            { modal: true },
+            ...options
+        );
+
+        if (!result || result.title === 'Cancel') return;
+
+        // Execute deletion
+        const deleteAll = result.title === 'Delete All (incl. Terminal/Worktree)';
+        await this.deleteThreadUseCase.execute({
+            threadId,
+            workspaceRoot,
+            closeTerminal: deleteAll,
+            removeWorktree: deleteAll
+        });
+
+        // Handle selection if deleted thread was selected
+        if (this.selectedThreadId === threadId) {
+            await this.selectNextThread();
+        }
+
+        // Refresh UI
+        this.refresh();
+    }
+
+    /**
+     * Rename a thread with input dialog.
+     */
+    async renameThread(threadId: string): Promise<void> {
+        if (!this.renameThreadUseCase || !this.threadStateRepository) {
+            vscode.window.showErrorMessage('Rename thread use case not available');
+            return;
+        }
+
+        const thread = await this.threadStateRepository.findById(threadId);
+        if (!thread) return;
+
+        const newName = await vscode.window.showInputBox({
+            prompt: 'Enter new thread name',
+            value: thread.name,
+            validateInput: (value) => {
+                if (!value || value.length === 0) return 'Name cannot be empty';
+                if (value.length > 50) return 'Name cannot exceed 50 characters';
+                return null;
+            }
+        });
+
+        if (!newName || newName === thread.name) return;
+
+        try {
+            await this.renameThreadUseCase.execute({ threadId, newName });
+            this.refresh();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to rename thread: ${message}`);
+        }
+    }
+
+    /**
+     * Switch branch for a worktree thread with quick pick.
+     */
+    async switchThreadBranch(threadId: string): Promise<void> {
+        if (!this.switchThreadBranchUseCase || !this.threadStateRepository || !this.gitPort) {
+            vscode.window.showErrorMessage('Switch branch use case not available');
+            return;
+        }
+
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (!workspaceRoot) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+
+        const thread = await this.threadStateRepository.findById(threadId);
+        if (!thread || !thread.worktreePath) {
+            vscode.window.showErrorMessage('Branch switching only available for worktree threads');
+            return;
+        }
+
+        // Get available branches
+        let branches: string[];
+        try {
+            branches = await this.gitPort.listBranches(workspaceRoot);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to list branches: ${message}`);
+            return;
+        }
+
+        // Show quick pick
+        const selected = await vscode.window.showQuickPick(branches, {
+            placeHolder: 'Select branch to switch to',
+            title: `Switch branch for "${thread.name}"`
+        });
+
+        if (!selected || selected === thread.branch) return;
+
+        // Check for uncommitted changes
+        const hasChanges = await this.gitPort.hasUncommittedChanges(thread.worktreePath);
+
+        if (hasChanges) {
+            const stashResult = await vscode.window.showWarningMessage(
+                'Uncommitted changes detected. Stash changes before switching?',
+                { modal: true },
+                'Stash and Switch',
+                'Cancel'
+            );
+            if (stashResult !== 'Stash and Switch') return;
+        }
+
+        // Execute switch
+        try {
+            await this.switchThreadBranchUseCase.execute({
+                threadId,
+                targetBranch: selected,
+                stashChanges: hasChanges
+            });
+
+            this.refresh();
+            vscode.window.showInformationMessage(`Switched to branch "${selected}"`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to switch branch: ${message}`);
+        }
+    }
+
+    /**
+     * Select next available thread after deletion.
+     */
+    private async selectNextThread(): Promise<void> {
+        const sessions = this.getSessions();
+        if (sessions.size > 0) {
+            const [firstId] = sessions.keys();
+            await this.selectThread(firstId);
+        } else {
+            this.selectedThreadId = null;
+            // Clear Code Squad panel or show empty state
         }
     }
 

@@ -13,6 +13,8 @@ export class VscodeTerminalGateway implements ITerminalPort {
     private debugChannel: vscode.OutputChannel | undefined;
     // Track pending executions for terminals not yet registered
     private pendingExecutions = new Map<vscode.Terminal, vscode.TerminalShellExecution>();
+    // Custom display names for terminals (VSCode doesn't support renaming)
+    private terminalDisplayNames = new Map<string, string>();
 
     constructor() {
         this.debugChannel = vscode.window.createOutputChannel('Code Squad Terminal');
@@ -202,5 +204,25 @@ export class VscodeTerminalGateway implements ITerminalPort {
         this.registerTerminal(terminalId, terminal);
 
         return terminalId;
+    }
+
+    closeTerminal(terminalId: string): void {
+        const terminal = this.terminals.get(terminalId);
+        if (terminal) {
+            terminal.dispose();
+            this.unregisterTerminal(terminalId);
+        }
+        // Also clean up display name
+        this.terminalDisplayNames.delete(terminalId);
+    }
+
+    updateTerminalName(terminalId: string, newName: string): void {
+        // Note: VSCode Terminal API doesn't support renaming terminals after creation
+        // Store the name internally for display purposes
+        this.terminalDisplayNames.set(terminalId, newName);
+    }
+
+    getDisplayName(terminalId: string): string | undefined {
+        return this.terminalDisplayNames.get(terminalId);
     }
 }

@@ -63,6 +63,39 @@ export class ThreadState {
         return this._whitelistPatterns.includes(pattern);
     }
 
+    /**
+     * Create a new ThreadState with updated name.
+     * @param newName - New name (1-50 chars, alphanumeric/hyphens/underscores/slashes)
+     * @throws Error if name is empty or exceeds 50 characters
+     */
+    withName(newName: string): ThreadState {
+        if (!newName || newName.length === 0) {
+            throw new Error('Thread name cannot be empty');
+        }
+        if (newName.length > 50) {
+            throw new Error('Thread name cannot exceed 50 characters');
+        }
+        return new ThreadState({
+            ...this.toData(),
+            name: newName,
+        });
+    }
+
+    /**
+     * Create a new ThreadState with updated branch.
+     * @param newBranch - New branch name
+     * @throws Error if branch is empty
+     */
+    withBranch(newBranch: string): ThreadState {
+        if (!newBranch || newBranch.length === 0) {
+            throw new Error('Branch name cannot be empty');
+        }
+        return new ThreadState({
+            ...this.toData(),
+            branch: newBranch,
+        });
+    }
+
     toData(): ThreadStateData {
         return {
             threadId: this.threadId,

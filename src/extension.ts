@@ -12,6 +12,9 @@ import { AttachToWorktreeUseCase } from './application/useCases/AttachToWorktree
 import { ManageWhitelistUseCase } from './application/useCases/ManageWhitelistUseCase';
 import { TrackFileOwnershipUseCase } from './application/useCases/TrackFileOwnershipUseCase';
 import { DetectThreadStatusUseCase } from './application/useCases/DetectThreadStatusUseCase';
+import { DeleteThreadUseCase } from './application/useCases/DeleteThreadUseCase';
+import { RenameThreadUseCase } from './application/useCases/RenameThreadUseCase';
+import { SwitchThreadBranchUseCase } from './application/useCases/SwitchThreadBranchUseCase';
 
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
@@ -92,6 +95,22 @@ export function activate(context: vscode.ExtensionContext) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const manageWhitelistUseCase = new ManageWhitelistUseCase(threadStateRepository);
     const detectThreadStatusUseCase = new DetectThreadStatusUseCase(terminalStatusDetector, notificationGateway);
+    const deleteThreadUseCase = new DeleteThreadUseCase(
+        threadStateRepository,
+        terminalGateway,
+        gitGateway,
+        commentRepository,
+        detectThreadStatusUseCase
+    );
+    const renameThreadUseCase = new RenameThreadUseCase(
+        threadStateRepository,
+        terminalGateway,
+        detectThreadStatusUseCase
+    );
+    const switchThreadBranchUseCase = new SwitchThreadBranchUseCase(
+        threadStateRepository,
+        gitGateway
+    );
 
     // ===== Adapters Layer - Controllers =====
     const aiDetectionController = new AIDetectionController(
@@ -127,7 +146,11 @@ export function activate(context: vscode.ExtensionContext) {
         (terminalId) => aiDetectionController.attachToTerminalById(terminalId),
         fileWatchController,
         commentRepository,
-        gitGateway
+        gitGateway,
+        deleteThreadUseCase,
+        renameThreadUseCase,
+        switchThreadBranchUseCase,
+        threadStateRepository
     );
 
     // Connect AIDetectionController to notify ThreadListController on session changes

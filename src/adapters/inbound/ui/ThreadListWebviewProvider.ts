@@ -11,6 +11,8 @@ interface ThreadInfo {
     fileCount: number;
     isSelected: boolean;
     workingDir: string;
+    hasWorktree: boolean;
+    threadId: string;
 }
 
 export interface CreateThreadOptions {
@@ -32,7 +34,10 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         private readonly onSelectThread: (id: string) => void,
         private readonly onCreateThread: (options: CreateThreadOptions) => void,
         private readonly onOpenNewTerminal: (id: string) => void,
-        private readonly onAttachToWorktree: () => void
+        private readonly onAttachToWorktree: () => void,
+        private readonly onDeleteThread?: (threadId: string) => void,
+        private readonly onRenameThread?: (threadId: string) => void,
+        private readonly onSwitchBranch?: (threadId: string) => void
     ) {}
 
     resolveWebviewView(
@@ -72,6 +77,21 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'attachToWorktree':
                     this.onAttachToWorktree();
+                    break;
+                case 'deleteThread':
+                    if (this.onDeleteThread) {
+                        this.onDeleteThread(message.threadId);
+                    }
+                    break;
+                case 'renameThread':
+                    if (this.onRenameThread) {
+                        this.onRenameThread(message.threadId);
+                    }
+                    break;
+                case 'switchBranch':
+                    if (this.onSwitchBranch) {
+                        this.onSwitchBranch(message.threadId);
+                    }
                     break;
             }
         });
@@ -127,7 +147,9 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                 status: metadata?.status ?? 'inactive',
                 fileCount,
                 isSelected: this.selectedId === terminalId,
-                workingDir
+                workingDir,
+                hasWorktree: !!threadState?.worktreePath,
+                threadId: threadState?.threadId ?? ''
             });
         }
 
@@ -180,9 +202,11 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(1.2)}}
         @keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
         .thread-file-count{font-size:11px;color:var(--vscode-descriptionForeground);flex-shrink:0}
-        .thread-terminal-btn{display:flex;align-items:center;justify-content:center;width:24px;height:24px;font-size:12px;color:var(--vscode-descriptionForeground);background:transparent;border:none;cursor:pointer;opacity:0;transition:opacity 0.15s;flex-shrink:0}
-        .thread-item:hover .thread-terminal-btn{opacity:1}
-        .thread-terminal-btn:hover{color:var(--vscode-foreground);background:var(--vscode-toolbar-hoverBackground)}
+        .thread-actions{display:flex;gap:2px;opacity:0;transition:opacity 0.15s;flex-shrink:0}
+        .thread-item:hover .thread-actions{opacity:1}
+        .thread-action-btn{display:flex;align-items:center;justify-content:center;width:22px;height:22px;font-size:11px;color:var(--vscode-descriptionForeground);background:transparent;border:none;cursor:pointer;border-radius:3px}
+        .thread-action-btn:hover{color:var(--vscode-foreground);background:var(--vscode-toolbar-hoverBackground)}
+        .thread-action-btn.delete:hover{color:var(--vscode-errorForeground)}
         .empty-msg{padding:8px 12px;color:var(--vscode-descriptionForeground);font-style:italic}
     </style>
 </head>
@@ -343,18 +367,39 @@ function render(threads) {
         return;
     }
     threadList.innerHTML = threads.map(t =>
-        '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '">' +
+        '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '" data-thread-id="' + t.threadId + '" data-has-worktree="' + t.hasWorktree + '">' +
         '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
         '<span class="thread-name">' + esc(t.name) + '</span>' +
-        '<button class="thread-terminal-btn" title="Open terminal in ' + esc(t.workingDir) + '">\u276F_</button>' +
+        '<div class="thread-actions">' +
+        '<button class="thread-action-btn terminal" title="Open terminal">\u276F_</button>' +
+        '<button class="thread-action-btn rename" title="Rename">\u270E</button>' +
+        (t.hasWorktree ? '<button class="thread-action-btn branch" title="Switch branch">\u2387</button>' : '') +
+        '<button class="thread-action-btn delete" title="Delete">\u2715</button>' +
+        '</div>' +
         '</div>'
     ).join('');
 
     threadList.querySelectorAll('.thread-item').forEach(el => {
+        const threadId = el.dataset.threadId;
         el.addEventListener('click', () => vscode.postMessage({ type: 'selectThread', id: el.dataset.id }));
-        el.querySelector('.thread-terminal-btn').addEventListener('click', (e) => {
+        el.querySelector('.terminal').addEventListener('click', (e) => {
             e.stopPropagation();
             vscode.postMessage({ type: 'openNewTerminal', id: el.dataset.id });
+        });
+        el.querySelector('.rename').addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'renameThread', threadId });
+        });
+        const branchBtn = el.querySelector('.branch');
+        if (branchBtn) {
+            branchBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                vscode.postMessage({ type: 'switchBranch', threadId });
+            });
+        }
+        el.querySelector('.delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'deleteThread', threadId });
         });
     });
 }

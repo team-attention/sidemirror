@@ -25,6 +25,7 @@ class MockCommentRepository implements ICommentRepository {
     async markAsSubmitted(_ids: string[]): Promise<void> {}
     async update(_id: string, _text: string): Promise<Comment | null> { return null; }
     async delete(_id: string): Promise<boolean> { return false; }
+    async deleteByThreadId(_threadId: string): Promise<number> { return 0; }
 }
 
 class MockTerminalPort implements ITerminalPort {
@@ -40,6 +41,9 @@ class MockTerminalPort implements ITerminalPort {
     onTerminalOutput(_callback: (terminalId: string, data: string) => void): void {}
     onCommandExecuted(_callback: (terminalId: string, command: string) => void): void {}
     onCommandEnded(_callback: (terminalId: string, command: string) => void): void {}
+    closeTerminal(_terminalId: string): void {}
+    updateTerminalName(_terminalId: string, _newName: string): void {}
+    getDisplayName(_terminalId: string): string | undefined { return undefined; }
 }
 
 class MockNotificationPort implements INotificationPort {

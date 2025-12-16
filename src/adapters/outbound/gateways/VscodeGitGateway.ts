@@ -340,4 +340,90 @@ export class VscodeGitGateway implements IGitPort {
             );
         });
     }
+
+    async removeWorktree(worktreePath: string, workspaceRoot: string, force = false): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const forceFlag = force ? ' --force' : '';
+            exec(
+                `cd "${workspaceRoot}" && git worktree remove "${worktreePath}"${forceFlag}`,
+                { maxBuffer: 1024 * 1024 },
+                (error) => {
+                    if (error) {
+                        reject(new Error(`Failed to remove worktree: ${error.message}`));
+                        return;
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
+
+    async switchBranch(workingDir: string, targetBranch: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            exec(
+                `cd "${workingDir}" && git switch "${targetBranch}"`,
+                { maxBuffer: 1024 * 1024 },
+                (error) => {
+                    if (error) {
+                        reject(new Error(`Failed to switch branch: ${error.message}`));
+                        return;
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
+
+    async listBranches(workspaceRoot: string): Promise<string[]> {
+        return new Promise((resolve, reject) => {
+            exec(
+                `cd "${workspaceRoot}" && git branch -a --format='%(refname:short)'`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error) {
+                        reject(new Error(`Failed to list branches: ${error.message}`));
+                        return;
+                    }
+                    const branches = stdout
+                        .split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0);
+                    resolve(branches);
+                }
+            );
+        });
+    }
+
+    async hasUncommittedChanges(workingDir: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            exec(
+                `cd "${workingDir}" && git status --porcelain`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error) {
+                        // On error, assume no changes
+                        resolve(false);
+                        return;
+                    }
+                    resolve(stdout.trim().length > 0);
+                }
+            );
+        });
+    }
+
+    async stashChanges(workingDir: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            exec(
+                `cd "${workingDir}" && git stash push -m "code-squad-auto"`,
+                { maxBuffer: 1024 * 1024 },
+                (error) => {
+                    if (error) {
+                        reject(new Error(`Failed to stash changes: ${error.message}`));
+                        return;
+                    }
+                    resolve();
+                }
+            );
+        });
+    }
 }

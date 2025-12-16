@@ -69,6 +69,18 @@ class MockTerminalPort implements ITerminalPort {
     onCommandEnded(_callback: TerminalCommandCallback): void {
         // Not needed for tests
     }
+
+    closeTerminal(_terminalId: string): void {
+        // Not needed for tests
+    }
+
+    updateTerminalName(_terminalId: string, _newName: string): void {
+        // Not needed for tests
+    }
+
+    getDisplayName(_terminalId: string): string | undefined {
+        return undefined;
+    }
 }
 
 class MockGitPort implements IGitPort {
@@ -116,6 +128,26 @@ class MockGitPort implements IGitPort {
 
     async getWorktreeBranch(_worktreePath: string): Promise<string> {
         return 'main';
+    }
+
+    async removeWorktree(_worktreePath: string, _workspaceRoot: string, _force?: boolean): Promise<void> {
+        // Not needed for tests
+    }
+
+    async switchBranch(_workingDir: string, _targetBranch: string): Promise<void> {
+        // Not needed for tests
+    }
+
+    async listBranches(_workspaceRoot: string): Promise<string[]> {
+        return ['main'];
+    }
+
+    async hasUncommittedChanges(_workingDir: string): Promise<boolean> {
+        return false;
+    }
+
+    async stashChanges(_workingDir: string): Promise<void> {
+        // Not needed for tests
     }
 }
 

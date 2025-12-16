@@ -139,6 +139,26 @@ class MockGitPort implements IGitPort {
         return 'main';
     }
 
+    async removeWorktree(_worktreePath: string, _workspaceRoot: string, _force?: boolean): Promise<void> {
+        // Not needed for tests
+    }
+
+    async switchBranch(_workingDir: string, _targetBranch: string): Promise<void> {
+        // Not needed for tests
+    }
+
+    async listBranches(_workspaceRoot: string): Promise<string[]> {
+        return ['main'];
+    }
+
+    async hasUncommittedChanges(_workingDir: string): Promise<boolean> {
+        return false;
+    }
+
+    async stashChanges(_workingDir: string): Promise<void> {
+        // Not needed for tests
+    }
+
     setDiff(relativePath: string, diff: string): void {
         this.diffs.set(relativePath, diff);
     }

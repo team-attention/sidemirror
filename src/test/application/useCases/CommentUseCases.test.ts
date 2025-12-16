@@ -53,6 +53,13 @@ class MockCommentRepository implements ICommentRepository {
         return this.comments.delete(id);
     }
 
+    async deleteByThreadId(threadId: string): Promise<number> {
+        const initial = this.comments.size;
+        const toDelete = Array.from(this.comments.values()).filter(c => c.threadId === threadId);
+        toDelete.forEach(c => this.comments.delete(c.id));
+        return initial - this.comments.size;
+    }
+
     // Test helpers
     addComment(comment: Comment): void {
         this.comments.set(comment.id, comment);
