@@ -6,7 +6,7 @@
 
 **Building with AI, the right way.**
 
-<video src="https://github.com/team-attention/code-squad/releases/download/v0.1.13/1215.1.1.mp4" controls width="600"></video>
+https://github.com/user-attachments/assets/cd1c6eb1-21fe-4179-91b8-a1abd920ea41
 
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/JakePark/code-squad?label=Downloads&color=teal)](https://open-vsx.org/extension/JakePark/code-squad)
 [![GitHub Stars](https://img.shields.io/github/stars/team-attention/code-squad?style=flat&color=yellow)](https://github.com/team-attention/code-squad)
