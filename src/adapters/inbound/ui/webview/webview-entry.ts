@@ -24,13 +24,29 @@ import langCss from 'shiki/dist/langs/css.mjs';
 import langMarkdown from 'shiki/dist/langs/markdown.mjs';
 import langShellscript from 'shiki/dist/langs/shellscript.mjs';
 
-// Theme
+// Themes - both light and dark for VSCode theme support
 import themeGithubDark from 'shiki/dist/themes/github-dark.mjs';
+import themeGithubLight from 'shiki/dist/themes/github-light.mjs';
 
 // ===== Syntax Highlighter =====
 
 let highlighterPromise: Promise<HighlighterCore> | null = null;
 let highlighter: HighlighterCore | null = null;
+
+/**
+ * Detect if VSCode is using a light or dark theme
+ * VSCode adds 'vscode-dark', 'vscode-light', or 'vscode-high-contrast' class to body
+ */
+function isLightTheme(): boolean {
+    return document.body.classList.contains('vscode-light');
+}
+
+/**
+ * Get the appropriate theme name based on VSCode's current theme
+ */
+function getThemeName(): 'github-dark' | 'github-light' {
+    return isLightTheme() ? 'github-light' : 'github-dark';
+}
 
 const SUPPORTED_LANGUAGES = [
     langTypescript,
@@ -53,7 +69,7 @@ async function initHighlighter(): Promise<HighlighterCore> {
 
     if (!highlighterPromise) {
         highlighterPromise = createHighlighterCore({
-            themes: [themeGithubDark],
+            themes: [themeGithubDark, themeGithubLight],
             langs: SUPPORTED_LANGUAGES,
             engine: createJavaScriptRegexEngine(),
         });
@@ -89,7 +105,7 @@ async function highlightLines(
     try {
         const html = hl.codeToHtml(code, {
             lang: language,
-            theme: 'github-dark',
+            theme: getThemeName(),
         });
 
         const match = html.match(/<code[^>]*>([\s\S]*)<\/code>/);
@@ -130,7 +146,7 @@ async function highlightCodeBlock(
     try {
         const html = hl.codeToHtml(code, {
             lang: normalizedLang,
-            theme: 'github-dark',
+            theme: getThemeName(),
         });
 
         const match = html.match(/<code[^>]*>([\s\S]*)<\/code>/);

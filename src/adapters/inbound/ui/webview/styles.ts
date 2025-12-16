@@ -1098,8 +1098,9 @@ button:hover {
   color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
 }
 
-.diff-line.addition .diff-line-content {
-  color: var(--vscode-gitDecoration-addedResourceForeground);
+/* Addition line prefix color - content uses syntax highlighting */
+.diff-line.addition .diff-line-content::before {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
 }
 
 .diff-line.deletion {
@@ -1111,8 +1112,9 @@ button:hover {
   color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
 }
 
-.diff-line.deletion .diff-line-content {
-  color: var(--vscode-gitDecoration-deletedResourceForeground);
+/* Deletion line prefix color - content uses syntax highlighting */
+.diff-line.deletion .diff-line-content::before {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
 }
 
 .diff-line.context {
@@ -1624,35 +1626,25 @@ button:hover {
 }
 
 /* ===== Syntax Highlighting Styles ===== */
-/* Override Shiki's default backgrounds */
-.diff-line-content .shiki,
-.diff-line-content .shiki code {
-  background: transparent !important;
+/*
+ * Shiki uses inline styles for syntax highlighting (style="color:#...").
+ * We only need to ensure backgrounds are transparent and deleted lines are dimmed.
+ */
+
+/* Ensure Shiki's wrapper elements don't add backgrounds */
+.diff-line-content .line {
   display: inline;
 }
 
 /* Slightly dim syntax colors for deleted lines */
-.diff-line.deletion .diff-line-content .shiki span {
+.diff-line.deletion .diff-line-content span[style] {
   opacity: 0.85;
 }
 
 /* Markdown preview code block syntax highlighting */
-.markdown-preview pre .shiki,
-.markdown-preview pre .shiki code {
+.markdown-preview pre code {
   background: transparent !important;
 }
-
-/* Shiki token colors - using VS Code semantic classes */
-.shiki .punctuation { color: var(--vscode-foreground, #d4d4d4); }
-.shiki .comment { color: var(--vscode-descriptionForeground, #6a9955); font-style: italic; }
-.shiki .string { color: var(--vscode-debugTokenExpression-string, #ce9178); }
-.shiki .keyword { color: var(--vscode-debugTokenExpression-name, #c586c0); }
-.shiki .number { color: var(--vscode-debugTokenExpression-number, #b5cea8); }
-.shiki .function { color: var(--vscode-symbolIcon-functionForeground, #dcdcaa); }
-.shiki .variable { color: var(--vscode-symbolIcon-variableForeground, #9cdcfe); }
-.shiki .type { color: var(--vscode-symbolIcon-classForeground, #4ec9b0); }
-.shiki .operator { color: var(--vscode-foreground, #d4d4d4); }
-.shiki .property { color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe); }
 
 /* ===== Hacker News Feed Styles ===== */
 .hn-feed {
