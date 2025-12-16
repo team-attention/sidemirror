@@ -79,7 +79,9 @@ export function activate(context: vscode.ExtensionContext) {
     const createThreadUseCase = new CreateThreadUseCase(
         threadStateRepository,
         terminalGateway,
-        gitGateway
+        gitGateway,
+        fileSystemGateway,
+        fileGlobber
     );
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const manageWhitelistUseCase = new ManageWhitelistUseCase(threadStateRepository);

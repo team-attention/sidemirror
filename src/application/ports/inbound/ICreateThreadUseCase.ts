@@ -8,6 +8,7 @@ export interface CreateThreadInput {
     branchName?: string;
     worktreePath?: string;
     workspaceRoot: string;
+    worktreeCopyPatterns?: string[];
 }
 
 export interface CreateThreadOutput {

@@ -5,4 +5,6 @@ export interface IFileSystemPort {
     getWorkspaceRoot(): string | undefined;
     toAbsolutePath(relativePath: string): string;
     toRelativePath(absolutePath: string): string;
+    copyFile(source: string, dest: string): Promise<void>;
+    ensureDir(dirPath: string): Promise<void>;
 }

@@ -209,6 +209,7 @@ export class ThreadListController {
                 branchName: options.branchName?.trim(),
                 worktreePath: options.worktreePath?.trim(),
                 workspaceRoot,
+                worktreeCopyPatterns: this.getWorktreeCopyPatterns(),
             });
 
             // Auto-attach Code Squad to the new terminal
@@ -277,6 +278,7 @@ export class ThreadListController {
                 isolationMode: isolationPick.mode,
                 branchName: branchName?.trim(),
                 workspaceRoot,
+                worktreeCopyPatterns: this.getWorktreeCopyPatterns(),
             });
 
             // Auto-attach Code Squad to the new terminal
@@ -300,6 +302,14 @@ export class ThreadListController {
      */
     private getWorkspaceRoot(): string | undefined {
         return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    }
+
+    /**
+     * Get worktree copy patterns from configuration.
+     */
+    private getWorktreeCopyPatterns(): string[] {
+        const config = vscode.workspace.getConfiguration('codeSquad');
+        return config.get<string[]>('worktreeCopyPatterns', []);
     }
 
     /**

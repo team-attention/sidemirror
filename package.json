@@ -96,6 +96,15 @@
           "minimum": 0,
           "maximum": 2000,
           "description": "Debounce delay for file change events in milliseconds. Set to 0 to disable debouncing. (Default: 300ms)"
+        },
+        "codeSquad.worktreeCopyPatterns": {
+          "type": "array",
+          "default": [],
+          "scope": "machine-overridable",
+          "items": {
+            "type": "string"
+          },
+          "description": "Glob patterns for files to copy from main workspace to worktrees (e.g., ['.env*', 'config/**'])"
         }
       }
     }

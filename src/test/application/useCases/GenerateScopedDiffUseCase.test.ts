@@ -87,6 +87,14 @@ class MockFileSystemPort implements IFileSystemPort {
         return true;
     }
 
+    async copyFile(_source: string, _dest: string): Promise<void> {
+        // Not needed for GenerateScopedDiffUseCase tests
+    }
+
+    async ensureDir(_dirPath: string): Promise<void> {
+        // Not needed for GenerateScopedDiffUseCase tests
+    }
+
     setFileContent(content: string): void {
         this.fileContent = content;
     }

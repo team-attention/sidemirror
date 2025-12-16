@@ -71,6 +71,14 @@ class MockFileSystemPort implements IFileSystemPort {
         return this.files.has(absolutePath);
     }
 
+    async copyFile(_source: string, _dest: string): Promise<void> {
+        // Not needed for CaptureSnapshotsUseCase tests
+    }
+
+    async ensureDir(_dirPath: string): Promise<void> {
+        // Not needed for CaptureSnapshotsUseCase tests
+    }
+
     // Test helpers
     setFile(absolutePath: string, content: string): void {
         this.files.set(absolutePath, content);

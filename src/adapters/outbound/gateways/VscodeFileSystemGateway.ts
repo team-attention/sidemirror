@@ -48,4 +48,12 @@ export class VscodeFileSystemGateway implements IFileSystemPort {
         if (!this.workspaceRoot) return absolutePath;
         return path.relative(this.workspaceRoot, absolutePath);
     }
+
+    async copyFile(source: string, dest: string): Promise<void> {
+        await fs.promises.copyFile(source, dest);
+    }
+
+    async ensureDir(dirPath: string): Promise<void> {
+        await fs.promises.mkdir(dirPath, { recursive: true });
+    }
 }

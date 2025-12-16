@@ -82,6 +82,14 @@ class MockFileSystemPort implements IFileSystemPort {
     setWorkspaceRoot(root: string | undefined): void {
         this.workspaceRoot = root;
     }
+
+    async copyFile(_source: string, _dest: string): Promise<void> {
+        // Not needed for GenerateDiffUseCase tests
+    }
+
+    async ensureDir(_dirPath: string): Promise<void> {
+        // Not needed for GenerateDiffUseCase tests
+    }
 }
 
 class MockGitPort implements IGitPort {
