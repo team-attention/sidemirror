@@ -1258,8 +1258,15 @@ export class FileWatchController {
             const relativePath = path.relative(watcher.workspaceRoot, uri.fsPath);
             const fileName = path.basename(relativePath);
 
-            // Skip if path is outside worktree or is gitignored
-            if (relativePath.startsWith('..') || this.gitignore.ignores(relativePath)) {
+            // Skip if path is outside worktree
+            if (relativePath.startsWith('..')) {
+                return;
+            }
+
+            const isWhitelisted = this.isWhitelisted(relativePath, session);
+
+            // Skip gitignored files only when not whitelisted
+            if (this.gitignore.ignores(relativePath) && !isWhitelisted) {
                 return;
             }
 
