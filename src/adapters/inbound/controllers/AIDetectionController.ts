@@ -9,6 +9,7 @@ import { IFileGlobber } from '../../../application/ports/outbound/IFileGlobber';
 import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
 import { ISymbolPort } from '../../../application/ports/outbound/ISymbolPort';
 import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
+import { IDeleteThreadUseCase } from '../../../application/ports/inbound/IDeleteThreadUseCase';
 import { FileInfo } from '../../../application/ports/outbound/PanelState';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 import { PanelStateManager } from '../../../application/services/PanelStateManager';
@@ -46,6 +47,9 @@ export class AIDetectionController {
 
     /** ThreadStateRepository for worktree path lookup */
     private threadStateRepository: IThreadStateRepository | undefined;
+
+    /** DeleteThreadUseCase for terminal close cleanup options */
+    private deleteThreadUseCase: IDeleteThreadUseCase | undefined;
 
     /** Callback for session changes (used by ThreadListController) */
     private onSessionChangeCallback?: () => void;
@@ -96,6 +100,13 @@ export class AIDetectionController {
      */
     setThreadStateRepository(repository: IThreadStateRepository): void {
         this.threadStateRepository = repository;
+    }
+
+    /**
+     * Set DeleteThreadUseCase for terminal close cleanup options.
+     */
+    setDeleteThreadUseCase(useCase: IDeleteThreadUseCase): void {
+        this.deleteThreadUseCase = useCase;
     }
 
     /**
@@ -629,15 +640,58 @@ export class AIDetectionController {
         }
     }
 
-    private handleTerminalClose(terminal: vscode.Terminal): void {
+    private async handleTerminalClose(terminal: vscode.Terminal): Promise<void> {
         const terminalId = this.getTerminalId(terminal);
         const context = this.sessions.get(terminalId);
 
-        if (context) {
-            console.log(`[Code Squad] Terminal closed: ${context.session.type} (${terminalId})`);
+        if (!context) {
+            // 세션이 없으면 무시 (싱글 패널은 세션과 독립적으로 유지)
+            return;
+        }
+
+        console.log(`[Code Squad] Terminal closed: ${context.session.type} (${terminalId})`);
+
+        // Check if this session has a worktree
+        const threadState = context.threadState;
+        if (threadState?.worktreePath && this.deleteThreadUseCase && this.threadStateRepository) {
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                this.flushSession(terminalId);
+                return;
+            }
+
+            // Show options dialog for worktree threads
+            const KEEP_WORKTREE = 'Keep Worktree';
+            const DELETE_WORKTREE_TOO = 'Delete Worktree Too';
+            const options: vscode.MessageItem[] = [
+                { title: KEEP_WORKTREE },
+                { title: DELETE_WORKTREE_TOO },
+            ];
+
+            const result = await vscode.window.showWarningMessage(
+                `Thread "${threadState.name}" closed. What would you like to do with its worktree?`,
+                { modal: true },
+                ...options
+            );
+
+            // Always flush session first since terminal is already closed
+            this.flushSession(terminalId);
+
+            const removeWorktree = result?.title === DELETE_WORKTREE_TOO;
+
+            // Execute delete thread use case to clean up thread state and optionally worktree
+            await this.deleteThreadUseCase.execute({
+                threadId: threadState.threadId,
+                workspaceRoot,
+                closeTerminal: false, // Terminal is already closed
+                removeWorktree
+            });
+
+            this.notifySessionChange();
+        } else {
+            // No worktree - just flush session
             this.flushSession(terminalId);
         }
-        // 세션이 없으면 무시 (싱글 패널은 세션과 독립적으로 유지)
     }
 
     private async handleTerminalFocus(terminal: vscode.Terminal): Promise<void> {

@@ -1061,13 +1061,18 @@ export class FileWatchController {
 
             const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
                 const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
-                this.log(`[Worktree:FSW] Event: ${relativePath}, session: ${terminalId}, type: ${eventType}`);
 
                 // Skip .git directory
                 if (relativePath.includes('.git')) {
-                    this.log(`[Worktree:FSW] Skipping .git: ${relativePath}`);
                     return;
                 }
+
+                // Skip gitignored files early (whitelist watcher handles those separately)
+                if (this.gitignore.ignores(relativePath) && !this.includePatterns.ignores(relativePath)) {
+                    return;
+                }
+
+                this.log(`[Worktree:FSW] Event: ${relativePath}, session: ${terminalId}, type: ${eventType}`);
 
                 // Add to batch collector
                 if (watcher.batchCollector) {
@@ -1075,7 +1080,7 @@ export class FileWatchController {
                         uri: { fsPath: uri.fsPath },
                         type: eventType,
                         timestamp: Date.now(),
-                        source: 'whitelist'
+                        source: 'git'
                     });
                 }
             };

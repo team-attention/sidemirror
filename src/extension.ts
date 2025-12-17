@@ -132,6 +132,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Connect controllers for worktree support
     aiDetectionController.setFileWatchController(fileWatchController);
     aiDetectionController.setThreadStateRepository(threadStateRepository);
+    aiDetectionController.setDeleteThreadUseCase(deleteThreadUseCase);
 
     // Thread List Controller (after AIDetectionController)
     const threadListController = new ThreadListController(
