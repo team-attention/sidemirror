@@ -4,7 +4,7 @@
 
 <br />
 
-**Building with AI, the right way.**
+**Immersive multi-agent coding.**
 
 https://github.com/user-attachments/assets/cd1c6eb1-21fe-4179-91b8-a1abd920ea41
 
@@ -20,15 +20,15 @@ https://github.com/user-attachments/assets/cd1c6eb1-21fe-4179-91b8-a1abd920ea41
 
 ## Why Code Squad?
 
-AI coding agents write fast. Too fast. Files pile up, changes scatter everywhere, and when you need to review or give feedback — **the flow breaks**.
+Running multiple AI agents in parallel is powerful — but switching between terminals, tracking changes across workspaces, and losing context is exhausting.
 
-- Hard to track what changed across multiple files
-- Context gets lost when running multiple agents
-- Copy-pasting code to request fixes is tedious
+- Juggling multiple terminals breaks your focus
+- Hard to see what changed across parallel sessions
+- Context switching kills the flow
 
-**Code Squad keeps the conversation going.**
+**Code Squad makes multi-agent coding immersive.**
 
-Talk to AI → Review changes instantly → Give inline feedback → AI fixes it. One seamless flow from start to finish.
+Manage all your AI sessions in one place. See every change. Give feedback inline. Stay in the zone while your agents work in parallel.
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "code-squad",
   "displayName": "Code Squad",
-  "description": "Stay in flow while building with AI",
+  "description": "Immersive multi-agent coding - manage parallel AI sessions without context switching",
   "version": "0.1.15",
   "publisher": "JakePark",
   "repository": {
@@ -14,16 +14,22 @@
     "vscode": "^1.93.0"
   },
   "categories": [
-    "Other",
-    "Visualization"
+    "Machine Learning",
+    "Other"
   ],
   "keywords": [
+    "codesquad",
+    "code-squad",
+    "code squad",
     "ai",
+    "ai coding",
+    "claude code",
+    "codex cli",
+    "gemini cli",
     "vibe coding",
-    "code review",
-    "claude",
-    "codex",
-    "gemini"
+    "multi-agent",
+    "parallel",
+    "terminal"
   ],
   "activationEvents": [
     "onStartupFinished"
