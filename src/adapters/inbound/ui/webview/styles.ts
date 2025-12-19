@@ -1800,6 +1800,19 @@ button:hover {
 .hn-story-domain { color: var(--vscode-textLink-foreground); opacity: 0.8; }
 .hn-story-time { margin-left: auto; }
 
+/* External link indicator for iframe-blocked domains */
+.hn-external-indicator {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+.hn-story-external .hn-story-title::after {
+  content: ' ↗';
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 /* Loading state */
 .hn-loading {
   display: flex;

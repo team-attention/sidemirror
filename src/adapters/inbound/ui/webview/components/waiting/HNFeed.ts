@@ -7,6 +7,54 @@
 
 import { escapeHtml } from '../../utils/dom';
 
+/**
+ * Domains known to block iframe embedding via X-Frame-Options or CSP.
+ * These will be marked with an external link indicator.
+ */
+const IFRAME_BLOCKED_DOMAINS = new Set([
+  'github.com',
+  'twitter.com',
+  'x.com',
+  'linkedin.com',
+  'facebook.com',
+  'youtube.com',
+  'medium.com',
+  'nytimes.com',
+  'wsj.com',
+  'bloomberg.com',
+  'washingtonpost.com',
+  'reddit.com',
+  'instagram.com',
+  'stackoverflow.com',
+  'apple.com',
+  'google.com',
+  'docs.google.com',
+  'drive.google.com',
+  'amazon.com',
+  'notion.so',
+  'figma.com',
+  'dropbox.com',
+  'pinterest.com',
+  'tumblr.com',
+  'quora.com',
+  'substack.com',
+]);
+
+/**
+ * Check if a domain blocks iframe embedding
+ */
+function isIframeBlocked(domain: string | undefined): boolean {
+  if (!domain) return false;
+  const lowerDomain = domain.toLowerCase();
+  // Check exact match or subdomain match
+  for (const blocked of IFRAME_BLOCKED_DOMAINS) {
+    if (lowerDomain === blocked || lowerDomain.endsWith('.' + blocked)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface HNStory {
   id: number;
   title: string;
@@ -24,16 +72,25 @@ export type HNFeedStatus = 'idle' | 'loading' | 'error';
  * Render a single HN story item
  */
 function renderHNStory(story: HNStory): string {
+  const isBlocked = isIframeBlocked(story.domain);
+  const externalIndicator = isBlocked
+    ? '<span class="hn-external-indicator" title="Opens in browser">↗</span>'
+    : '';
   const domainDisplay = story.domain
-    ? `<span class="hn-story-domain">(${escapeHtml(story.domain)})</span>`
+    ? `<span class="hn-story-domain">(${escapeHtml(story.domain)})${externalIndicator}</span>`
     : '';
   const storyUrl = story.url || story.discussionUrl;
   // Escape title for use in onclick attribute (escape both HTML and quotes)
   const escapedTitleForAttr = escapeHtml(story.title).replace(/'/g, "\\'");
 
+  // For blocked domains, open directly in browser instead of webview
+  const clickHandler = isBlocked
+    ? `openHNStoryExternal('${escapeHtml(storyUrl)}')`
+    : `openHNStory('${escapeHtml(storyUrl)}', '${escapedTitleForAttr}')`;
+
   return `
-    <div class="hn-story">
-      <span class="hn-story-title" onclick="openHNStory('${escapeHtml(storyUrl)}', '${escapedTitleForAttr}')" title="${escapeHtml(story.title)}">
+    <div class="hn-story${isBlocked ? ' hn-story-external' : ''}">
+      <span class="hn-story-title" onclick="${clickHandler}" title="${escapeHtml(story.title)}">
         ${escapeHtml(story.title)}
       </span>
       <div class="hn-story-meta">
@@ -156,6 +213,16 @@ export function setupHNFeedHandlers(vscode: VSCodeAPI): void {
       });
     }
   };
+
+  (window as unknown as Record<string, unknown>).openHNStoryExternal =
+    function (url: string) {
+      if (url) {
+        vscode.postMessage({
+          type: 'openContentExternal',
+          url: url,
+        });
+      }
+    };
 
   (window as unknown as Record<string, unknown>).openHNComments = function (
     storyId: number
