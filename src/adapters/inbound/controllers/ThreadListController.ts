@@ -14,10 +14,13 @@ import { ICommentRepository } from '../../../application/ports/outbound/IComment
 import { IGitPort, WorktreeInfo } from '../../../application/ports/outbound/IGitPort';
 import { FileInfo } from '../../../application/ports/outbound/PanelState';
 
+const LAST_ISOLATION_MODE_KEY = 'codeSquad.lastIsolationMode';
+
 export class ThreadListController {
     private webviewProvider: ThreadListWebviewProvider | undefined;
     private selectedThreadId: string | null = null; // null = "All Agents"
     private disposables: vscode.Disposable[] = [];
+    private extensionContext: vscode.ExtensionContext | undefined;
 
     constructor(
         private readonly getSessions: () => Map<string, SessionContext>,
@@ -35,6 +38,8 @@ export class ThreadListController {
     ) {}
 
     activate(context: vscode.ExtensionContext): void {
+        this.extensionContext = context;
+
         // Create webview provider
         this.webviewProvider = new ThreadListWebviewProvider(
             context.extensionUri,
@@ -45,7 +50,8 @@ export class ThreadListController {
             () => this.attachToWorktree(),
             (id) => this.deleteThread(id),
             (id) => this.openInEditor(id),
-            () => this.getAvailableWorktreeCount()
+            () => this.getAvailableWorktreeCount(),
+            () => this.getLastIsolationMode()
         );
 
         // Register webview view provider
@@ -225,6 +231,9 @@ export class ThreadListController {
                 workspaceRoot,
                 worktreeCopyPatterns: this.getWorktreeCopyPatterns(),
             });
+
+            // Save last used isolation mode
+            this.saveLastIsolationMode(options.isolationMode);
 
             // Auto-attach Code Squad to the new terminal
             if (this.attachCodeSquad) {
@@ -567,6 +576,20 @@ export class ThreadListController {
             this.selectedThreadId = null;
             // Clear Code Squad panel or show empty state
         }
+    }
+
+    /**
+     * Get last used isolation mode from global state.
+     */
+    private getLastIsolationMode(): IsolationMode {
+        return this.extensionContext?.globalState.get<IsolationMode>(LAST_ISOLATION_MODE_KEY) ?? 'none';
+    }
+
+    /**
+     * Save last used isolation mode to global state.
+     */
+    private saveLastIsolationMode(mode: IsolationMode): void {
+        this.extensionContext?.globalState.update(LAST_ISOLATION_MODE_KEY, mode);
     }
 
     dispose(): void {

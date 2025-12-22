@@ -39,7 +39,8 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         private readonly onAttachToWorktree: () => void,
         private readonly onDeleteThread?: (threadId: string) => void,
         private readonly onOpenInEditor?: (threadId: string) => void,
-        private readonly getAvailableWorktreeCount?: () => Promise<number>
+        private readonly getAvailableWorktreeCount?: () => Promise<number>,
+        private readonly getDefaultIsolationMode?: () => IsolationMode
     ) {}
 
     resolveWebviewView(
@@ -117,10 +118,12 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
 
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const workspaceName = workspaceRoot ? path.basename(workspaceRoot) : '';
+        const defaultIsolationMode = this.getDefaultIsolationMode?.() ?? 'none';
 
         this.view.webview.postMessage({
             type: 'workspaceInfo',
-            workspaceName
+            workspaceName,
+            defaultIsolationMode
         });
     }
 
@@ -391,9 +394,6 @@ $('startBtn').addEventListener('click', () => {
     branchName.dataset.edited = '';
     worktreePath.value = '';
     worktreePath.dataset.edited = '';
-    isolationMode.value = 'none';
-    branchGroup.classList.add('hidden');
-    pathGroup.classList.add('hidden');
 });
 
 threadName.addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
@@ -566,7 +566,16 @@ window.addEventListener('message', e => {
             attachBtn.style.display = e.data.availableWorktreeCount > 0 ? '' : 'none';
         }
     }
-    if (e.data.type === 'workspaceInfo') workspaceName = e.data.workspaceName || '';
+    if (e.data.type === 'workspaceInfo') {
+        workspaceName = e.data.workspaceName || '';
+        // Set default isolation mode
+        if (e.data.defaultIsolationMode) {
+            isolationMode.value = e.data.defaultIsolationMode;
+            const show = isolationMode.value !== 'none';
+            branchGroup.classList.toggle('hidden', !show);
+            pathGroup.classList.toggle('hidden', !show);
+        }
+    }
 });
 
 // Notify extension that webview is ready to receive messages
