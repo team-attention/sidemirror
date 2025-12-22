@@ -453,9 +453,9 @@ async function renderScopedDiff(
     ${toggleHtml}
   `;
 
-  // Transform comments
+  // Transform comments (filter out submitted comments - they should not appear in file view)
   const fileComments: InlineComment[] = (comments || [])
-    .filter((c) => c.file === scopedDiff.file)
+    .filter((c) => c.file === scopedDiff.file && !c.isSubmitted)
     .map((c) => ({
       id: c.id,
       line: c.line,
@@ -597,15 +597,15 @@ async function renderDiff(
     diffCollapseAll.textContent = allCollapsed ? 'Expand' : 'Collapse';
   }
 
-  // Transform comments
+  // Transform comments (filter out submitted comments - they should not appear in file view)
   const fileComments: InlineComment[] = (comments || [])
-    .filter((c) => c.file === diff.file)
+    .filter((c) => c.file === diff.file && !c.isSubmitted)
     .map((c) => ({
       id: c.id,
       line: c.line,
       endLine: c.endLine,
       text: c.text,
-      isSubmitted: c.isSubmitted,
+      isSubmitted: false,
     }));
 
   // Get language for syntax highlighting
@@ -659,9 +659,9 @@ async function renderMarkdownPreview(
   const changedLineNumbers = (diff as DiffData & { changedLineNumbers?: number[] }).changedLineNumbers;
   const deletions = (diff as DiffData & { deletions?: Array<{ afterLine: number; content: string }> }).deletions;
 
-  // Transform comments for markdown preview
+  // Transform comments for markdown preview (filter out submitted comments)
   const fileComments: MarkdownComment[] = (comments || [])
-    .filter((c) => c.file === diff.file)
+    .filter((c) => c.file === diff.file && !c.isSubmitted)
     .map((c) => ({
       id: c.id,
       line: c.line,
