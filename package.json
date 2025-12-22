@@ -2,7 +2,7 @@
   "name": "code-squad",
   "displayName": "Code Squad",
   "description": "Immersive multi-agent coding - manage parallel AI sessions without context switching",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
