@@ -27,6 +27,10 @@ import {
   performDiffSearch,
   navigateDiffSearch,
   clearDiffHighlights,
+  highlightDiffMatches,
+  updateCurrentMatch,
+  updateMatchCounter,
+  updateNavButtons,
   renderChunksToHtml,
   setupChunkToggleHandlers,
   renderScopedDiffContent,
@@ -709,11 +713,25 @@ function onFileChange(): void {
   // Re-run diff search if active
   const searchState = stateManager.getSearch();
   if (searchState.diffSearchQuery) {
-    const matches = performDiffSearch(searchState.diffSearchQuery);
-    stateManager.setSearch({
-      diffSearchMatches: matches,
-      diffSearchCurrentIndex: matches.length > 0 ? 0 : -1,
-    });
+    const diffViewer = document.getElementById('diff-viewer');
+    const diffSearchElements = getDiffSearchElements();
+    if (diffViewer) {
+      clearDiffHighlights(diffViewer);
+      const matches = performDiffSearch(searchState.diffSearchQuery, diffViewer);
+      const currentIndex = matches.length > 0 ? 0 : -1;
+      stateManager.setSearch({
+        diffSearchMatches: matches,
+        diffSearchCurrentIndex: currentIndex,
+      });
+      if (matches.length > 0) {
+        highlightDiffMatches(matches);
+        updateCurrentMatch(currentIndex);
+      }
+      if (diffSearchElements) {
+        updateMatchCounter(diffSearchElements.searchCounter, currentIndex, matches.length);
+        updateNavButtons(diffSearchElements.prevButton, diffSearchElements.nextButton, matches.length > 0);
+      }
+    }
   }
 }
 
@@ -1130,37 +1148,49 @@ export function initialize(): void {
 
   // Setup diff search (only if elements exist)
   const diffSearchElements = getDiffSearchElements();
-  if (diffSearchElements) {
+  const diffViewer = document.getElementById('diff-viewer');
+  if (diffSearchElements && diffViewer) {
     setupDiffSearchHandlers(
       diffSearchElements,
       () => stateManager.getSearch(),
       (query) => {
         stateManager.setSearch({ diffSearchQuery: query });
+        clearDiffHighlights(diffViewer);
         if (query) {
-          const matches = performDiffSearch(query);
+          const matches = performDiffSearch(query, diffViewer);
+          const currentIndex = matches.length > 0 ? 0 : -1;
           stateManager.setSearch({
             diffSearchMatches: matches,
-            diffSearchCurrentIndex: matches.length > 0 ? 0 : -1,
+            diffSearchCurrentIndex: currentIndex,
           });
+          if (matches.length > 0) {
+            highlightDiffMatches(matches);
+            updateCurrentMatch(currentIndex);
+          }
+          updateMatchCounter(diffSearchElements.searchCounter, currentIndex, matches.length);
+          updateNavButtons(diffSearchElements.prevButton, diffSearchElements.nextButton, matches.length > 0);
         } else {
-          clearDiffHighlights();
           stateManager.setSearch({
             diffSearchMatches: [],
             diffSearchCurrentIndex: -1,
           });
+          updateMatchCounter(diffSearchElements.searchCounter, -1, 0);
+          updateNavButtons(diffSearchElements.prevButton, diffSearchElements.nextButton, false);
         }
       },
       (direction) => {
         const searchState = stateManager.getSearch();
         if (searchState.diffSearchMatches.length === 0) return;
-        navigateDiffSearch(
+        const newIndex = navigateDiffSearch(
           searchState.diffSearchMatches,
           searchState.diffSearchCurrentIndex,
           direction
         );
+        stateManager.setSearch({ diffSearchCurrentIndex: newIndex });
+        updateMatchCounter(diffSearchElements.searchCounter, newIndex, searchState.diffSearchMatches.length);
       },
       () => {
-        clearDiffHighlights();
+        clearDiffHighlights(diffViewer);
         stateManager.setSearch({
           diffSearchQuery: '',
           diffSearchMatches: [],

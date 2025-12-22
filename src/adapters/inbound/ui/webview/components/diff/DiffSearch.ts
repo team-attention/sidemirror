@@ -30,7 +30,7 @@ export interface DiffSearchElements {
 const MAX_SEARCH_MATCHES = 500;
 
 /**
- * Perform search in diff content
+ * Perform search in diff content (supports both diff view and markdown preview)
  */
 export function performDiffSearch(
   query: string,
@@ -40,28 +40,85 @@ export function performDiffSearch(
   if (!query) return matches;
 
   const lowerQuery = query.toLowerCase();
+
+  // Try diff view cells first
   const contentCells = diffViewer.querySelectorAll('.diff-line-content');
 
-  contentCells.forEach((cell, cellIndex) => {
-    if (matches.length >= MAX_SEARCH_MATCHES) return;
+  if (contentCells.length > 0) {
+    // Diff view mode
+    contentCells.forEach((cell, cellIndex) => {
+      if (matches.length >= MAX_SEARCH_MATCHES) return;
 
-    const text = cell.textContent || '';
-    const lowerText = text.toLowerCase();
-    let startIndex = 0;
-    let matchIndex: number;
+      const text = cell.textContent || '';
+      const lowerText = text.toLowerCase();
+      let startIndex = 0;
+      let matchIndex: number;
 
-    while ((matchIndex = lowerText.indexOf(lowerQuery, startIndex)) !== -1) {
-      if (matches.length >= MAX_SEARCH_MATCHES) break;
-      matches.push({
-        cell: cell as HTMLElement,
-        cellIndex,
-        start: matchIndex,
-        end: matchIndex + lowerQuery.length,
-        text: text.substring(matchIndex, matchIndex + lowerQuery.length),
+      while ((matchIndex = lowerText.indexOf(lowerQuery, startIndex)) !== -1) {
+        if (matches.length >= MAX_SEARCH_MATCHES) break;
+        matches.push({
+          cell: cell as HTMLElement,
+          cellIndex,
+          start: matchIndex,
+          end: matchIndex + lowerQuery.length,
+          text: text.substring(matchIndex, matchIndex + lowerQuery.length),
+        });
+        startIndex = matchIndex + 1;
+      }
+    });
+  } else {
+    // Markdown preview mode - search in diff-block elements
+    const diffBlocks = diffViewer.querySelectorAll('.diff-block');
+
+    if (diffBlocks.length > 0) {
+      diffBlocks.forEach((block, blockIndex) => {
+        if (matches.length >= MAX_SEARCH_MATCHES) return;
+
+        const text = block.textContent || '';
+        const lowerText = text.toLowerCase();
+        let startIndex = 0;
+        let matchIndex: number;
+
+        while ((matchIndex = lowerText.indexOf(lowerQuery, startIndex)) !== -1) {
+          if (matches.length >= MAX_SEARCH_MATCHES) break;
+          matches.push({
+            cell: block as HTMLElement,
+            cellIndex: blockIndex,
+            start: matchIndex,
+            end: matchIndex + lowerQuery.length,
+            text: text.substring(matchIndex, matchIndex + lowerQuery.length),
+          });
+          startIndex = matchIndex + 1;
+        }
       });
-      startIndex = matchIndex + 1;
+    } else {
+      // Fallback: search any markdown-preview content
+      const markdownPreview = diffViewer.querySelector('.markdown-preview');
+      if (markdownPreview) {
+        const paragraphs = markdownPreview.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, code, pre');
+        paragraphs.forEach((el, idx) => {
+          if (matches.length >= MAX_SEARCH_MATCHES) return;
+
+          const text = el.textContent || '';
+          const lowerText = text.toLowerCase();
+          let startIndex = 0;
+          let matchIndex: number;
+
+          while ((matchIndex = lowerText.indexOf(lowerQuery, startIndex)) !== -1) {
+            if (matches.length >= MAX_SEARCH_MATCHES) break;
+            matches.push({
+              cell: el as HTMLElement,
+              cellIndex: idx,
+              start: matchIndex,
+              end: matchIndex + lowerQuery.length,
+              text: text.substring(matchIndex, matchIndex + lowerQuery.length),
+            });
+            startIndex = matchIndex + 1;
+          }
+        });
+      }
     }
-  });
+  }
 
   return matches;
 }
