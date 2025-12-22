@@ -60,7 +60,7 @@ import {
   setupPreviewCommentHandlers,
   createPreviewSelectionState,
 } from '../components/markdown';
-import type { MarkdownComment, PreviewSelectionState } from '../components/markdown';
+import type { PreviewSelectionState } from '../components/markdown';
 import { escapeHtml } from '../utils/dom';
 
 // ===== Types =====
@@ -255,6 +255,22 @@ interface DraftComment {
   startLine: number;
   endLine: number;
   text: string;
+}
+
+/**
+ * Filter and transform comments for display in diff/file view.
+ * Only returns pending (non-submitted) comments for the specified file.
+ */
+function getVisibleFileComments(comments: Comment[] | undefined, file: string): InlineComment[] {
+  return (comments || [])
+    .filter((c) => c.file === file && !c.isSubmitted)
+    .map((c) => ({
+      id: c.id,
+      line: c.line,
+      endLine: c.endLine,
+      text: c.text,
+      isSubmitted: false,
+    }));
 }
 
 async function renderState(state: RenderState): Promise<void> {
@@ -453,16 +469,7 @@ async function renderScopedDiff(
     ${toggleHtml}
   `;
 
-  // Transform comments
-  const fileComments: InlineComment[] = (comments || [])
-    .filter((c) => c.file === scopedDiff.file)
-    .map((c) => ({
-      id: c.id,
-      line: c.line,
-      endLine: c.endLine,
-      text: c.text,
-      isSubmitted: false,
-    }));
+  const fileComments = getVisibleFileComments(comments, scopedDiff.file);
 
   // Collect lines for highlighting
   const allLines: Array<{ lineNumber: number; content: string }> = [];
@@ -597,16 +604,7 @@ async function renderDiff(
     diffCollapseAll.textContent = allCollapsed ? 'Expand' : 'Collapse';
   }
 
-  // Transform comments
-  const fileComments: InlineComment[] = (comments || [])
-    .filter((c) => c.file === diff.file)
-    .map((c) => ({
-      id: c.id,
-      line: c.line,
-      endLine: c.endLine,
-      text: c.text,
-      isSubmitted: c.isSubmitted,
-    }));
+  const fileComments = getVisibleFileComments(comments, diff.file);
 
   // Get language for syntax highlighting
   const language = window.CodeSquadHighlighter
@@ -659,16 +657,7 @@ async function renderMarkdownPreview(
   const changedLineNumbers = (diff as DiffData & { changedLineNumbers?: number[] }).changedLineNumbers;
   const deletions = (diff as DiffData & { deletions?: Array<{ afterLine: number; content: string }> }).deletions;
 
-  // Transform comments for markdown preview
-  const fileComments: MarkdownComment[] = (comments || [])
-    .filter((c) => c.file === diff.file)
-    .map((c) => ({
-      id: c.id,
-      line: c.line,
-      endLine: c.endLine,
-      text: c.text,
-      isSubmitted: false,
-    }));
+  const fileComments = getVisibleFileComments(comments, diff.file);
 
   // Render markdown with highlights
   const markdownHtml = await renderFullMarkdownWithHighlights(
