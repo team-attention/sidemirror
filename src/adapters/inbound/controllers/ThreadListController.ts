@@ -304,6 +304,9 @@ export class ThreadListController {
                 worktreeCopyPatterns: this.getWorktreeCopyPatterns(),
             });
 
+            // Save last used isolation mode
+            this.saveLastIsolationMode(isolationPick.mode);
+
             // Auto-attach Code Squad to the new terminal
             if (this.attachCodeSquad) {
                 await this.attachCodeSquad(result.threadState.terminalId);
@@ -582,14 +585,22 @@ export class ThreadListController {
      * Get last used isolation mode from global state.
      */
     private getLastIsolationMode(): IsolationMode {
-        return this.extensionContext?.globalState.get<IsolationMode>(LAST_ISOLATION_MODE_KEY) ?? 'none';
+        if (!this.extensionContext) {
+            console.warn('[Code Squad] extensionContext is not available to get last isolation mode.');
+            return 'none';
+        }
+        return this.extensionContext.globalState.get<IsolationMode>(LAST_ISOLATION_MODE_KEY) ?? 'none';
     }
 
     /**
      * Save last used isolation mode to global state.
      */
     private saveLastIsolationMode(mode: IsolationMode): void {
-        this.extensionContext?.globalState.update(LAST_ISOLATION_MODE_KEY, mode);
+        if (!this.extensionContext) {
+            console.warn('[Code Squad] extensionContext is not available to save last isolation mode.');
+            return;
+        }
+        this.extensionContext.globalState.update(LAST_ISOLATION_MODE_KEY, mode);
     }
 
     dispose(): void {
