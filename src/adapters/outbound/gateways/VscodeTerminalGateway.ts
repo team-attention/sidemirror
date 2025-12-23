@@ -89,7 +89,7 @@ export class VscodeTerminalGateway implements ITerminalPort {
             this.outputThrottleTimers.delete(terminalId);
             const bufferedData = this.outputBuffers.get(terminalId);
             if (bufferedData) {
-                this.outputBuffers.set(terminalId, '');
+                this.outputBuffers.delete(terminalId);
                 for (const callback of this.outputCallbacks) {
                     try {
                         callback(terminalId, bufferedData);
@@ -182,6 +182,18 @@ export class VscodeTerminalGateway implements ITerminalPort {
         if (timer) {
             clearTimeout(timer);
             this.outputThrottleTimers.delete(id);
+        }
+
+        // Flush remaining data before cleanup
+        const bufferedData = this.outputBuffers.get(id);
+        if (bufferedData) {
+            for (const callback of this.outputCallbacks) {
+                try {
+                    callback(id, bufferedData);
+                } catch {
+                    // Ignore callback errors
+                }
+            }
         }
         this.outputBuffers.delete(id);
     }
