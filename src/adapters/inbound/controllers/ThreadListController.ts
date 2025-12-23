@@ -512,20 +512,38 @@ export class ThreadListController {
             return;
         }
 
-        // Show confirmation dialog
-        const options: vscode.MessageItem[] = [
-            { title: 'Keep Worktree' },
-            { title: 'Delete Worktree Too' },
-            { title: 'Cancel', isCloseAffordance: true }
-        ];
+        // Check if thread has worktree (worktree mode vs local/branch mode)
+        const hasWorktree = thread.worktreePath !== undefined && thread.worktreePath !== '';
 
-        const result = await vscode.window.showWarningMessage(
-            `Delete thread "${thread.name}"?`,
-            { modal: true },
-            ...options
-        );
+        let removeWorktree = false;
 
-        if (!result || result.title === 'Cancel') return;
+        if (hasWorktree) {
+            // Worktree mode: Show options to keep or delete worktree
+            const options: vscode.MessageItem[] = [
+                { title: 'Keep Worktree' },
+                { title: 'Delete Worktree Too' },
+                { title: 'Cancel', isCloseAffordance: true }
+            ];
+
+            const result = await vscode.window.showWarningMessage(
+                `Delete thread "${thread.name}"?`,
+                { modal: true },
+                ...options
+            );
+
+            if (!result || result.title === 'Cancel') return;
+            removeWorktree = result.title === 'Delete Worktree Too';
+        } else {
+            // Local/Branch mode: Simple confirmation dialog
+            const result = await vscode.window.showWarningMessage(
+                `Delete thread "${thread.name}"?`,
+                { modal: true },
+                { title: 'Delete' },
+                { title: 'Cancel', isCloseAffordance: true }
+            );
+
+            if (!result || result.title === 'Cancel') return;
+        }
 
         // Remove session BEFORE executing deletion
         // This prevents handleTerminalClose from showing another dialog
@@ -533,14 +551,11 @@ export class ThreadListController {
         if (this.removeSession && thread.terminalId) {
             this.removeSession(thread.terminalId);
         }
-
-        // Execute deletion
-        const deleteAll = result.title === 'Delete Worktree Too';
         await this.deleteThreadUseCase.execute({
             threadId,
             workspaceRoot,
             closeTerminal: true, // Always close terminal when deleting thread
-            removeWorktree: deleteAll
+            removeWorktree
         });
 
         // Handle selection if deleted thread was selected
